@@ -1,0 +1,8 @@
+Clave,Nombre,ClaveCategoria,Costo,Precio,StockActual,StockMinimo,TiempoEntrega,Demanda,Estado
+123,Pantalla,ELEC05,2000.0,76.0,20,0,0,0,Activo
+321,Mouse,ELEC15,200.0,300.0,23,10,4,4,Activo
+4545,Teclado,ELEC15,150.0,300.0,30,3,1,4,Activo
+P9384,Conector RJ45,ELEC06,4.0,4.5,1000,10,3,2000,Inactivo
+o880687,kjnkj,ELEC03,150.0,100.0,1,1,1,1,Activo
+13234,nvngf,ELEC02,200.0,100.0,12,12,1,1,Inactivo
+4546,Teclado HP,ELEC03,10.0,15.0,10,5,5,2,Activo

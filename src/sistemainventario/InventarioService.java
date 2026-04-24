@@ -1,0 +1,409 @@
+package sistemainventario;
+
+
+import java.io.IOException;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * Capa de negocio principal del sistema.
+ *
+ * Esta clase centraliza reglas como:
+ * - Validaciones de productos y movimientos.
+ * - Calculo de estado de stock.
+ * - Persistencia (a traves del repositorio CSV).
+ */
+public class InventarioService {
+
+    private static final DateTimeFormatter FORMATO_ID = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
+
+    private final CsvInventarioRepository repository;
+    private final Map<String, String> categorias = new LinkedHashMap<>();
+
+    private List<Producto> productos = new ArrayList<>();
+    private List<MovimientoInventario> movimientos = new ArrayList<>();
+
+    /**
+     * Crea el servicio y carga la informacion desde CSV.
+     */
+    public InventarioService(CsvInventarioRepository repository) throws InventarioException {
+        this.repository = repository;
+        inicializarCategorias();
+        recargar();
+    }
+
+    /**
+     * Recarga todos los datos desde disco.
+     */
+    public final void recargar() throws InventarioException {
+        try {
+            repository.asegurarArchivoMovimientos();
+            productos = repository.cargarProductos();
+            movimientos = repository.cargarMovimientos();
+        } catch (IOException ex) {
+            throw new InventarioException("No se pudo cargar el inventario: " + ex.getMessage());
+        }
+    }
+
+    public Map<String, String> getCategorias() {
+        return Collections.unmodifiableMap(categorias);
+    }
+
+    /**
+     * Devuelve los productos ordenados alfabeticamente por nombre.
+     */
+    public List<Producto> obtenerProductosOrdenados() {
+        List<Producto> copia = new ArrayList<>(productos);
+        copia.sort(Comparator.comparing(Producto::getNombre, String.CASE_INSENSITIVE_ORDER));
+        return copia;
+    }
+
+    public List<Producto> filtrarProductos(String filtro) {
+        if (filtro == null || filtro.isBlank()) {
+            return obtenerProductosOrdenados();
+        }
+        String criterio = filtro.toLowerCase().trim();
+        List<Producto> resultado = new ArrayList<>();
+        for (Producto p : productos) {
+            String categoriaNombre = obtenerNombreCategoria(p.getCategoriaClave()).toLowerCase();
+            if (p.getClave().toLowerCase().contains(criterio)
+                    || p.getNombre().toLowerCase().contains(criterio)
+                    || categoriaNombre.contains(criterio)) {
+                resultado.add(p);
+            }
+        }
+        resultado.sort(Comparator.comparing(Producto::getNombre, String.CASE_INSENSITIVE_ORDER));
+        return resultado;
+    }
+
+    public Producto buscarProductoPorClave(String clave) {
+        if (clave == null) {
+            return null;
+        }
+        for (Producto p : productos) {
+            if (p.getClave().equalsIgnoreCase(clave.trim())) {
+                return p;
+            }
+        }
+        return null;
+    }
+
+    public String obtenerNombreCategoria(String clave) {
+        return categorias.getOrDefault(clave, "Desconocida");
+    }
+
+    /**
+     * Busca la clave interna de categoria a partir del nombre mostrado.
+     */
+    public String obtenerClaveCategoria(String nombre) {
+        for (Map.Entry<String, String> item : categorias.entrySet()) {
+            if (item.getValue().equals(nombre)) {
+                return item.getKey();
+            }
+        }
+        return "";
+    }
+
+    public void registrarProducto(Producto nuevo) throws InventarioException {
+        validarProducto(nuevo, false);
+        productos.add(nuevo);
+        persistirProductos();
+    }
+
+    /**
+     * Actualiza un producto existente por su clave.
+     */
+    public void actualizarProducto(Producto actualizado) throws InventarioException {
+        validarProducto(actualizado, true);
+        Producto existente = buscarProductoPorClave(actualizado.getClave());
+        if (existente == null) {
+            throw new InventarioException("No existe el producto con clave: " + actualizado.getClave());
+        }
+        if ("Inactivo".equalsIgnoreCase(existente.getEstado())) {
+            throw new InventarioException("No se puede editar un producto inactivo. Activelo primero.");
+        }
+
+        existente.setNombre(actualizado.getNombre());
+        existente.setCategoriaClave(actualizado.getCategoriaClave());
+        existente.setCosto(actualizado.getCosto());
+        existente.setPrecio(actualizado.getPrecio());
+        existente.setStockActual(actualizado.getStockActual());
+        existente.setStockMinimo(actualizado.getStockMinimo());
+        existente.setTiempoEntrega(actualizado.getTiempoEntrega());
+        existente.setDemanda(actualizado.getDemanda());
+        existente.setEstado(actualizado.getEstado());
+
+        persistirProductos();
+    }
+
+    public void cambiarEstadoProducto(String clave) throws InventarioException {
+        Producto p = buscarProductoPorClave(clave);
+        if (p == null) {
+            throw new InventarioException("No existe el producto seleccionado.");
+        }
+        p.setEstado("Activo".equalsIgnoreCase(p.getEstado()) ? "Inactivo" : "Activo");
+        persistirProductos();
+    }
+
+    public MovimientoInventario registrarMovimiento(String claveProducto, String tipo, int cantidadEntrada,
+            LocalDateTime fecha, String motivo) throws InventarioException {
+
+        List<String> errores = new ArrayList<>();
+        Producto producto = buscarProductoPorClave(claveProducto);
+        if (producto == null) {
+            errores.add("Producto: no existe en el inventario.");
+        }
+        if (motivo == null || motivo.trim().isEmpty()) {
+            errores.add("Motivo: esta vacio.");
+        }
+        if (fecha == null) {
+            fecha = LocalDateTime.now();
+        }
+
+        int ajuste = 0;
+        if (tipo == null || tipo.isBlank()) {
+            errores.add("Tipo: no fue seleccionado.");
+        } else if ("Entrada".equalsIgnoreCase(tipo)) {
+            if (cantidadEntrada <= 0) {
+                errores.add("Cantidad: para entrada debe ser mayor que 0.");
+            } else {
+                ajuste = cantidadEntrada;
+            }
+        } else if ("Salida".equalsIgnoreCase(tipo)) {
+            if (cantidadEntrada <= 0) {
+                errores.add("Cantidad: para salida debe ser mayor que 0.");
+            } else {
+                ajuste = -cantidadEntrada;
+            }
+        } else if ("Ajuste".equalsIgnoreCase(tipo)) {
+            if (cantidadEntrada == 0) {
+                errores.add("Cantidad: para ajuste no puede ser 0.");
+            } else {
+                ajuste = cantidadEntrada;
+            }
+        } else {
+            errores.add("Tipo: valor no valido.");
+        }
+
+        int stockAntes = 0;
+        int stockDespues = 0;
+        if (producto != null) {
+            stockAntes = producto.getStockActual();
+            stockDespues = stockAntes + ajuste;
+            if ("Salida".equalsIgnoreCase(tipo) && cantidadEntrada > stockAntes) {
+                errores.add("Cantidad: supera el stock disponible (" + stockAntes + ").");
+            }
+            if (stockDespues < 0) {
+                errores.add("Stock: el movimiento dejaria stock negativo.");
+            }
+        }
+
+        if (!errores.isEmpty()) {
+            throw new InventarioException(construirMensajeErrores("No se pudo registrar el movimiento. Revisa:", errores));
+        }
+
+        producto.setStockActual(stockDespues);
+        MovimientoInventario movimiento = new MovimientoInventario(
+                generarIdMovimiento(),
+                producto.getClave(),
+                ajuste,
+                fecha,
+                capitalizar(tipo),
+                motivo.trim(),
+                stockAntes,
+                stockDespues
+        );
+
+        movimientos.add(movimiento);
+        persistirTodo();
+        return movimiento;
+    }
+
+    public List<MovimientoInventario> obtenerMovimientos(String claveProducto) {
+        List<MovimientoInventario> lista = new ArrayList<>();
+        for (MovimientoInventario m : movimientos) {
+            if (claveProducto == null || claveProducto.isBlank()
+                    || m.getClaveProducto().equalsIgnoreCase(claveProducto)) {
+                lista.add(m);
+            }
+        }
+
+        lista.sort(Comparator
+                .comparing(MovimientoInventario::getFecha)
+                .reversed()
+                .thenComparing(MovimientoInventario::getId, Comparator.reverseOrder()));
+
+        return lista;
+    }
+
+    public String calcularEstadoStock(Producto producto) {
+        if (producto.getStockActual() <= 0) {
+            return "Agotado";
+        }
+        if (producto.getStockMinimo() > producto.getStockActual()) {
+            return "Stock bajo";
+        }
+        if (producto.getStockMinimo() > 0 && producto.getStockActual() > producto.getStockMinimo() * 3) {
+            return "Sobreinventario";
+        }
+        return "Normal";
+    }
+
+    public int contarProductos() {
+        return productos.size();
+    }
+
+    public int contarAgotados() {
+        int total = 0;
+        for (Producto p : productos) {
+            if ("Agotado".equals(calcularEstadoStock(p))) {
+                total++;
+            }
+        }
+        return total;
+    }
+
+    public int contarStockBajo() {
+        int total = 0;
+        for (Producto p : productos) {
+            if ("Stock bajo".equals(calcularEstadoStock(p))) {
+                total++;
+            }
+        }
+        return total;
+    }
+
+    public int contarSobreinventario() {
+        int total = 0;
+        for (Producto p : productos) {
+            if ("Sobreinventario".equals(calcularEstadoStock(p))) {
+                total++;
+            }
+        }
+        return total;
+    }
+
+    public int contarMovimientos() {
+        return movimientos.size();
+    }
+
+    private void validarProducto(Producto producto, boolean esEdicion) throws InventarioException {
+        List<String> errores = new ArrayList<>();
+
+        if (producto == null) {
+            throw new InventarioException("Producto invalido.");
+        }
+        if (producto.getClave() == null || producto.getClave().trim().isEmpty()) {
+            errores.add("Clave: esta vacia.");
+        }
+        if (producto.getNombre() == null || producto.getNombre().trim().isEmpty()) {
+            errores.add("Nombre: esta vacio.");
+        }
+        if (producto.getCategoriaClave() == null || producto.getCategoriaClave().trim().isEmpty()) {
+            errores.add("Categoria: no seleccionada.");
+        }
+        if (producto.getCosto() <= 0) {
+            errores.add("Costo: debe ser mayor que 0.");
+        }
+        if (producto.getPrecio() <= 0) {
+            errores.add("Precio: debe ser mayor que 0.");
+        }
+        if (producto.getStockActual() < 0) {
+            errores.add("Stock actual: no puede ser negativo.");
+        }
+        if (producto.getStockMinimo() <= 0) {
+            errores.add("Stock minimo: debe ser mayor que 0.");
+        }
+        if (producto.getTiempoEntrega() <= 0) {
+            errores.add("Tiempo de entrega: debe ser 1 o mayor.");
+        }
+        if (producto.getDemanda() <= 0) {
+            errores.add("Demanda: debe ser mayor que 0.");
+        }
+        if (!esEdicion && buscarProductoPorClave(producto.getClave()) != null) {
+            errores.add("Clave: ya existe.");
+        }
+
+        if (!errores.isEmpty()) {
+            throw new InventarioException(construirMensajeErrores("No se pudo guardar el producto. Revisa:", errores));
+        }
+    }
+
+    private void persistirProductos() throws InventarioException {
+        try {
+            repository.guardarProductos(productos);
+        } catch (IOException ex) {
+            throw new InventarioException("No se pudo guardar productos: " + ex.getMessage());
+        }
+    }
+
+    private void persistirTodo() throws InventarioException {
+        try {
+            repository.guardarProductos(productos);
+            repository.guardarMovimientos(movimientos);
+        } catch (IOException ex) {
+            throw new InventarioException("No se pudieron guardar cambios: " + ex.getMessage());
+        }
+    }
+
+    private String generarIdMovimiento() {
+        int correlativo = movimientos.size() + 1;
+        String id;
+        do {
+            id = "MOV-" + LocalDateTime.now().format(FORMATO_ID) + "-" + String.format("%03d", correlativo++);
+        } while (existeMovimiento(id));
+        return id;
+    }
+
+    private boolean existeMovimiento(String id) {
+        for (MovimientoInventario m : movimientos) {
+            if (m.getId().equalsIgnoreCase(id)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String capitalizar(String texto) {
+        if (texto == null || texto.isBlank()) {
+            return "";
+        }
+        String limpio = texto.trim().toLowerCase();
+        return Character.toUpperCase(limpio.charAt(0)) + limpio.substring(1);
+    }
+
+    /**
+     * Construye un mensaje con multiples errores para mostrarlos en una sola ventana.
+     */
+    private String construirMensajeErrores(String encabezado, List<String> errores) {
+        StringBuilder mensaje = new StringBuilder(encabezado).append(System.lineSeparator());
+        for (String error : errores) {
+            mensaje.append("- ").append(error).append(System.lineSeparator());
+        }
+        return mensaje.toString().trim();
+    }
+
+    private void inicializarCategorias() {
+        categorias.put("ELEC01", "Computadoras y laptops");
+        categorias.put("ELEC02", "Componentes de PC");
+        categorias.put("ELEC03", "Perifericos");
+        categorias.put("ELEC04", "Monitores");
+        categorias.put("ELEC05", "Impresoras y escaneres");
+        categorias.put("ELEC06", "Redes y conectividad");
+        categorias.put("ELEC07", "Almacenamiento");
+        categorias.put("ELEC08", "Accesorios para celulares");
+        categorias.put("ELEC09", "Smartphones y tablets");
+        categorias.put("ELEC10", "Audio y sonido");
+        categorias.put("ELEC11", "Video y entretenimiento");
+        categorias.put("ELEC12", "Energia y proteccion");
+        categorias.put("ELEC13", "Camaras y videovigilancia");
+        categorias.put("ELEC14", "Gadgets y wearables");
+        categorias.put("ELEC15", "Consumibles");
+    }
+}
