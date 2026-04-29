@@ -61,7 +61,7 @@ public class InicioPanel extends JPanel {
         tarjetas.add(crearTarjeta("Agotados", lblAgotados));
         tarjetas.add(crearTarjeta("Stock bajo", lblStockBajo));
         tarjetas.add(crearTarjeta("Sobreinventario", lblSobreinventario));
-        tarjetas.add(crearTarjeta("Movimientos", lblTotalMovimientos));
+        tarjetas.add(crearTarjeta("Movimientos Inventario", lblTotalMovimientos));
 
         JPanel contenedorCentro = new JPanel(new BorderLayout(0, 18));
         contenedorCentro.setBackground(Interfaz.BG_MAIN);
@@ -72,14 +72,12 @@ public class InicioPanel extends JPanel {
 
         var btnCatalogo = Interfaz.botonPrimario("Productos");
         btnCatalogo.addActionListener(e -> navegador.irAVista(InicioFrame.VISTA_CATALOGO));
-        var btnMovimientos = Interfaz.botonPrimario("Movimientos");
+        var btnMovimientos = Interfaz.botonPrimario("Movimientos Inventario");
         btnMovimientos.addActionListener(e -> navegador.irAVista(InicioFrame.VISTA_MOVIMIENTOS));
-      //  var btnStock = Interfaz.botonPrimario("Stock");
-        //btnStock.addActionListener(e -> navegador.irAVista(InicioFrame.VISTA_STOCK));
+   
 
         accesos.add(btnCatalogo);
         accesos.add(btnMovimientos);
-       // accesos.add(btnStock);
 
         contenedorCentro.add(accesos, BorderLayout.SOUTH);
         add(contenedorCentro, BorderLayout.CENTER);

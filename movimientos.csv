@@ -1,2 +1,4 @@
 Id,ClaveProducto,Cantidad,Fecha,Tipo,Motivo,StockAntes,StockDespues
 MOV-20260423102700-001,321,3,2026-04-23 10:26,Entrada,1,20,23
+MOV-20260429115727-002,12,5,2026-04-29 11:56,Entrada,nomas we,2,7
+MOV-20260429115820-003,4548,4,2026-04-29 11:57,Ajuste,jsjsjssjsjsjsjsjs,1,5

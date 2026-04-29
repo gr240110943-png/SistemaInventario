@@ -106,7 +106,7 @@ public class MovimientosPanel extends JPanel {
         form.add(crearCampo("Producto *", cbProductoMovimiento));
         form.add(crearCampo("Tipo *", cbTipoMovimiento));
         form.add(crearCampo("Cantidad *", txtCantidad));
-        form.add(crearCampo("Fecha (yyyy-MM-dd HH:mm) *", txtFecha));
+        form.add(crearCampo("Fecha *", txtFecha));
         form.add(crearCampo("Motivo *", txtMotivo));
 
         JPanel botones = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));

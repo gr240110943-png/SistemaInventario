@@ -26,7 +26,7 @@ public class InicioFrame extends javax.swing.JFrame {
 
     public static final String VISTA_INICIO = "INICIO";
     public static final String VISTA_CATALOGO = "CATALOGO";
-    public static final String VISTA_MOVIMIENTOS = "MOVIMIENTOS";
+    public static final String VISTA_MOVIMIENTOS = "MOVIMIENTOS INVENTARIO";
    // public static final String VISTA_STOCK = "STOCK";
 
     private final InventarioService service;
@@ -111,7 +111,7 @@ public class InicioFrame extends javax.swing.JFrame {
         btnInicio.addActionListener(e -> mostrarVista(VISTA_INICIO));
         btnCatalogo = crearBotonMenu("Catalogo Productos");
         btnCatalogo.addActionListener(e -> mostrarVista(VISTA_CATALOGO));
-        btnMovimientos = crearBotonMenu("Movimientos");
+        btnMovimientos = crearBotonMenu("Movimientos Inventario");
         btnMovimientos.addActionListener(e -> mostrarVista(VISTA_MOVIMIENTOS));
         btnStock = crearBotonMenu("Stock");
      //   btnStock.addActionListener(e -> mostrarVista(VISTA_STOCK));
