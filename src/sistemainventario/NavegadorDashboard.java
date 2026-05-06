@@ -7,3 +7,5 @@ package sistemainventario;
 public interface NavegadorDashboard {
     void irAVista(String vista);
 }
+
+

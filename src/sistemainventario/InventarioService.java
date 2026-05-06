@@ -27,7 +27,9 @@ public class InventarioService {
     private final Map<String, String> categorias = new LinkedHashMap<>();
 
     private List<Producto> productos = new ArrayList<>();
-    private List<MovimientoInventario> movimientos = new ArrayList<>();
+    private List<MovimientoEncabezado> movimientosEncabezado = new ArrayList<>();
+    private List<MovimientoDetalle> movimientosDetalle = new ArrayList<>();
+    private int siguienteNumeroMovimiento = 1;
 
     /**
      * Crea el servicio y carga la informacion desde CSV.
@@ -45,7 +47,10 @@ public class InventarioService {
         try {
             repository.asegurarArchivoMovimientos();
             productos = repository.cargarProductos();
-            movimientos = repository.cargarMovimientos();
+            // Nuevo esquema
+            movimientosEncabezado = repository.cargarMovimientosEncabezado();
+            movimientosDetalle = repository.cargarMovimientosDetalle();
+            siguienteNumeroMovimiento = calcularSiguienteNumeroMovimiento();
         } catch (IOException ex) {
             throw new InventarioException("No se pudo cargar el inventario: " + ex.getMessage());
         }
@@ -151,86 +156,185 @@ public class InventarioService {
         persistirProductos();
     }
 
-    public MovimientoInventario registrarMovimiento(String claveProducto, String tipo, int cantidadEntrada,
-            LocalDateTime fecha, String motivo) throws InventarioException {
+    /**
+     * Registra un movimiento (encabezado + multiples detalles) y actualiza stock.
+     *
+     * Reglas:
+     * - Salida: no permite si stock insuficiente.
+     * - Producto Inactivo: no permite Entrada/Salida; si permite Ajuste.
+     * - Ajuste: requiere motivo (comentario) y la cantidad no puede ser 0.
+     */
+    public MovimientoEncabezado registrarMovimiento(String tipo, LocalDateTime fecha, String motivo, List<MovimientoLinea> lineas)
+            throws InventarioException {
 
         List<String> errores = new ArrayList<>();
-        Producto producto = buscarProductoPorClave(claveProducto);
-        if (producto == null) {
-            errores.add("Producto: no existe en el inventario.");
-        }
-        if (motivo == null || motivo.trim().isEmpty()) {
-            errores.add("Motivo: esta vacio.");
-        }
         if (fecha == null) {
             fecha = LocalDateTime.now();
         }
 
-        int ajuste = 0;
-        if (tipo == null || tipo.isBlank()) {
-            errores.add("Tipo: no fue seleccionado.");
-        } else if ("Entrada".equalsIgnoreCase(tipo)) {
-            if (cantidadEntrada <= 0) {
-                errores.add("Cantidad: para entrada debe ser mayor que 0.");
-            } else {
-                ajuste = cantidadEntrada;
-            }
-        } else if ("Salida".equalsIgnoreCase(tipo)) {
-            if (cantidadEntrada <= 0) {
-                errores.add("Cantidad: para salida debe ser mayor que 0.");
-            } else {
-                ajuste = -cantidadEntrada;
-            }
-        } else if ("Ajuste".equalsIgnoreCase(tipo)) {
-            if (cantidadEntrada == 0) {
-                errores.add("Cantidad: para ajuste no puede ser 0.");
-            } else {
-                ajuste = cantidadEntrada;
-            }
-        } else {
+        String tipoNorm = capitalizar(tipo);
+        if (tipoNorm.isBlank()
+                || !(tipoNorm.equalsIgnoreCase("Entrada") || tipoNorm.equalsIgnoreCase("Salida") || tipoNorm.equalsIgnoreCase("Ajuste"))) {
             errores.add("Tipo: valor no valido.");
         }
 
-        int stockAntes = 0;
-        int stockDespues = 0;
-        if (producto != null) {
-            stockAntes = producto.getStockActual();
-            stockDespues = stockAntes + ajuste;
-            if ("Salida".equalsIgnoreCase(tipo) && cantidadEntrada > stockAntes) {
-                errores.add("Cantidad: supera el stock disponible (" + stockAntes + ").");
-            }
-            if (stockDespues < 0) {
-                errores.add("Stock: el movimiento dejaria stock negativo.");
-            }
+        String motivoLimpio = motivo == null ? "" : motivo.trim();
+        if (motivoLimpio.isEmpty()) {
+            // En el requerimiento, al menos para ajuste es obligatorio; lo hacemos obligatorio para todos.
+            errores.add("Motivo: esta vacio.");
+        }
+
+        if (lineas == null || lineas.isEmpty()) {
+            errores.add("Detalle: agrega al menos un producto.");
         }
 
         if (!errores.isEmpty()) {
             throw new InventarioException(construirMensajeErrores("No se pudo registrar el movimiento. Revisa:", errores));
         }
 
-        producto.setStockActual(stockDespues);
-        MovimientoInventario movimiento = new MovimientoInventario(
-                generarIdMovimiento(),
-                producto.getClave(),
-                ajuste,
-                fecha,
-                capitalizar(tipo),
-                motivo.trim(),
-                stockAntes,
-                stockDespues
-        );
+        // Validar y calcular efectos sin mutar estado (operacion atomica)
+        List<MovimientoDetalle> detallesARegistrar = new ArrayList<>();
+        List<String> advertenciasSobreinventario = new ArrayList<>();
 
-        movimientos.add(movimiento);
+        String idMovimiento = generarIdMovimiento();
+        int numeroMovimiento = siguienteNumeroMovimiento;
+        for (MovimientoLinea linea : lineas) {
+            if (linea == null || linea.getClaveProducto() == null || linea.getClaveProducto().isBlank()) {
+                errores.add("Producto: clave vacia en detalle.");
+                continue;
+            }
+            Producto producto = buscarProductoPorClave(linea.getClaveProducto());
+            if (producto == null) {
+                errores.add("Producto: no existe (" + linea.getClaveProducto() + ").");
+                continue;
+            }
+
+            boolean inactivo = "Inactivo".equalsIgnoreCase(producto.getEstado());
+            if (inactivo && ("Entrada".equalsIgnoreCase(tipoNorm) || "Salida".equalsIgnoreCase(tipoNorm))) {
+                errores.add("Producto " + producto.getClave() + ": esta inactivo. Solo se permite ajuste.");
+                continue;
+            }
+
+            int cantidad = linea.getCantidad();
+            int ajuste = 0;
+            if ("Entrada".equalsIgnoreCase(tipoNorm)) {
+                if (cantidad <= 0) {
+                    errores.add("Cantidad (" + producto.getClave() + "): para entrada debe ser mayor que 0.");
+                    continue;
+                }
+                ajuste = cantidad;
+            } else if ("Salida".equalsIgnoreCase(tipoNorm)) {
+                if (cantidad <= 0) {
+                    errores.add("Cantidad (" + producto.getClave() + "): para salida debe ser mayor que 0.");
+                    continue;
+                }
+                ajuste = -cantidad;
+            } else if ("Ajuste".equalsIgnoreCase(tipoNorm)) {
+                if (cantidad == 0) {
+                    errores.add("Cantidad (" + producto.getClave() + "): para ajuste no puede ser 0.");
+                    continue;
+                }
+                ajuste = cantidad;
+            }
+
+            int stockAntes = producto.getStockActual();
+            int stockDespues = stockAntes + ajuste;
+            if ("Salida".equalsIgnoreCase(tipoNorm) && cantidad > stockAntes) {
+                errores.add("Cantidad (" + producto.getClave() + "): supera el stock disponible (" + stockAntes + ").");
+                continue;
+            }
+            if (stockDespues < 0) {
+                errores.add("Stock (" + producto.getClave() + "): el movimiento dejaria stock negativo.");
+                continue;
+            }
+
+            if ("Entrada".equalsIgnoreCase(tipoNorm) && producto.getStockMinimo() > 0
+                    && (stockAntes + cantidad) > (producto.getStockMinimo() * 3)) {
+                advertenciasSobreinventario.add("Advertencia (" + producto.getClave() + "): la entrada dejaria el stock en "
+                        + (stockAntes + cantidad) + " (> 3x minimo " + producto.getStockMinimo() + ").");
+            }
+
+            detallesARegistrar.add(new MovimientoDetalle(
+                    idMovimiento,
+                    producto.getClave(),
+                    ajuste,
+                    stockAntes,
+                    stockDespues
+            ));
+        }
+
+        if (!errores.isEmpty()) {
+            throw new InventarioException(construirMensajeErrores("No se pudo registrar el movimiento. Revisa:", errores));
+        }
+
+        // Mutar stock y persistir
+        for (MovimientoDetalle d : detallesARegistrar) {
+            Producto producto = buscarProductoPorClave(d.getClaveProducto());
+            if (producto != null) {
+                producto.setStockActual(d.getStockDespues());
+            }
+        }
+
+        MovimientoEncabezado encabezado = new MovimientoEncabezado(
+                idMovimiento,
+                numeroMovimiento,
+                fecha,
+                tipoNorm,
+                motivoLimpio
+        );
+        movimientosEncabezado.add(encabezado);
+        movimientosDetalle.addAll(detallesARegistrar);
+        siguienteNumeroMovimiento++;
+
         persistirTodo();
-        return movimiento;
+        return encabezado;
+    }
+
+    public List<String> previsualizarAdvertenciasSobreinventario(String tipo, List<MovimientoLinea> lineas) {
+        String tipoNorm = capitalizar(tipo);
+        if (!"Entrada".equalsIgnoreCase(tipoNorm) || lineas == null) {
+            return List.of();
+        }
+        List<String> advertencias = new ArrayList<>();
+        for (MovimientoLinea l : lineas) {
+            if (l == null) {
+                continue;
+            }
+            Producto p = buscarProductoPorClave(l.getClaveProducto());
+            if (p == null) {
+                continue;
+            }
+            if (l.getCantidad() <= 0) {
+                continue;
+            }
+            int stockDespues = p.getStockActual() + l.getCantidad();
+            if (p.getStockMinimo() > 0 && stockDespues > p.getStockMinimo() * 3) {
+                advertencias.add("Advertencia (" + p.getClave() + "): la entrada dejaria el stock en "
+                        + stockDespues + " (> 3x minimo " + p.getStockMinimo() + ").");
+            }
+        }
+        return advertencias;
     }
 
     public List<MovimientoInventario> obtenerMovimientos(String claveProducto) {
         List<MovimientoInventario> lista = new ArrayList<>();
-        for (MovimientoInventario m : movimientos) {
+        // Nuevo esquema: join encabezado + detalles
+        for (MovimientoDetalle d : movimientosDetalle) {
             if (claveProducto == null || claveProducto.isBlank()
-                    || m.getClaveProducto().equalsIgnoreCase(claveProducto)) {
-                lista.add(m);
+                    || d.getClaveProducto().equalsIgnoreCase(claveProducto)) {
+                MovimientoEncabezado enc = buscarEncabezado(d.getIdMovimiento());
+                if (enc != null) {
+                    lista.add(new MovimientoInventario(
+                            enc.getId(),
+                            d.getClaveProducto(),
+                            d.getCantidad(),
+                            enc.getFecha(),
+                            enc.getTipo(),
+                            enc.getMotivo(),
+                            d.getStockAntes(),
+                            d.getStockDespues()
+                    ));
+                }
             }
         }
 
@@ -240,6 +344,11 @@ public class InventarioService {
                 .thenComparing(MovimientoInventario::getId, Comparator.reverseOrder()));
 
         return lista;
+    }
+
+    public int obtenerNumeroMovimiento(String idMovimiento) {
+        MovimientoEncabezado enc = buscarEncabezado(idMovimiento);
+        return enc == null ? 0 : enc.getNumeroMovimiento();
     }
 
     public String calcularEstadoStock(Producto producto) {
@@ -290,7 +399,14 @@ public class InventarioService {
     }
 
     public int contarMovimientos() {
-        return movimientos.size();
+        return movimientosEncabezado.size();
+    }
+
+    /**
+     * Numero consecutivo que se asignara al siguiente movimiento registrado.
+     */
+    public int obtenerSiguienteNumeroMovimiento() {
+        return siguienteNumeroMovimiento;
     }
 
     private void validarProducto(Producto producto, boolean esEdicion) throws InventarioException {
@@ -346,14 +462,15 @@ public class InventarioService {
     private void persistirTodo() throws InventarioException {
         try {
             repository.guardarProductos(productos);
-            repository.guardarMovimientos(movimientos);
+            repository.guardarMovimientosEncabezado(movimientosEncabezado);
+            repository.guardarMovimientosDetalle(movimientosDetalle);
         } catch (IOException ex) {
             throw new InventarioException("No se pudieron guardar cambios: " + ex.getMessage());
         }
     }
 
     private String generarIdMovimiento() {
-        int correlativo = movimientos.size() + 1;
+        int correlativo = movimientosEncabezado.size() + 1;
         String id;
         do {
             id = "MOV-" + LocalDateTime.now().format(FORMATO_ID) + "-" + String.format("%03d", correlativo++);
@@ -362,12 +479,34 @@ public class InventarioService {
     }
 
     private boolean existeMovimiento(String id) {
-        for (MovimientoInventario m : movimientos) {
+        for (MovimientoEncabezado m : movimientosEncabezado) {
             if (m.getId().equalsIgnoreCase(id)) {
                 return true;
             }
         }
         return false;
+    }
+
+    private MovimientoEncabezado buscarEncabezado(String idMovimiento) {
+        if (idMovimiento == null) {
+            return null;
+        }
+        for (MovimientoEncabezado e : movimientosEncabezado) {
+            if (idMovimiento.equalsIgnoreCase(e.getId())) {
+                return e;
+            }
+        }
+        return null;
+    }
+
+    private int calcularSiguienteNumeroMovimiento() {
+        int max = 0;
+        for (MovimientoEncabezado e : movimientosEncabezado) {
+            if (e.getNumeroMovimiento() > max) {
+                max = e.getNumeroMovimiento();
+            }
+        }
+        return max + 1;
     }
 
     private String capitalizar(String texto) {
