@@ -23,6 +23,7 @@ public class SistemaInventario {
                 CsvInventarioRepository repository = new CsvInventarioRepository("productos.csv", "movimientos.csv");
                 InventarioService service = new InventarioService(repository);
                 InicioFrame ventana = new InicioFrame(service);
+                ventana.setExtendedState(javax.swing.JFrame.MAXIMIZED_BOTH);
                 ventana.setVisible(true);
             } catch (InventarioException ex) {
                 JOptionPane.showMessageDialog(null, ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);

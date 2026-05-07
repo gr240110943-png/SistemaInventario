@@ -1,13 +1,13 @@
 Clave,Nombre,ClaveCategoria,Costo,Precio,StockActual,StockMinimo,TiempoEntrega,Demanda,Estado
-123,Pantalla,ELEC05,2000.0,76.0,220,0,0,0,Activo
-321,Mouse,ELEC15,200.0,300.0,123,10,4,4,Activo
+123,Pantalla,ELEC05,2000.0,76.0,3,0,0,0,Activo
+321,Mouse,ELEC15,200.0,300.0,3,10,4,4,Activo
 4545,Teclado,ELEC15,150.0,300.0,30,3,1,4,Activo
-P9384,Conector RJ45,ELEC06,4.0,4.5,1001,10,3,2000,Inactivo
+P9384,Conector RJ45,ELEC06,4.0,4.5,32,10,3,2000,Activo
 o880687,kjnkj,ELEC03,150.0,100.0,1,1,1,1,Activo
-13234,nvngf,ELEC02,200.0,100.0,12,12,1,1,Inactivo
+13234,nvngf,ELEC02,200.0,100.0,112,12,1,1,Inactivo
 4546,Teclado HP,ELEC03,10.0,15.0,210,5,5,2,Activo
 12,qwe,ELEC02,12.0,10.0,7,2,1,1,Activo
 9292929,qwertyu,ELEC02,12.0,111.0,12,12,1,1,Activo
-4547,Bocinas,ELEC15,5.0,10.0,109,1,1,1,Activo
-4548,Esto es una prueba,ELEC02,1.0,2.0,5,1,1,1,Activo
-3211,Funda para cargador,ELEC08,100.0,10.0,10300,1,1,1,Activo
+4547,Bocinas para oir,ELEC15,5.0,10.0,45,1,1,1,Activo
+4548,Esto es una prueba,ELEC02,1.0,2.0,9,1,1,1,Activo
+3211,Funda para cargador,ELEC08,100.0,10.0,10,1,1,1,Activo

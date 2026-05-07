@@ -27,6 +27,7 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
+import javax.swing.DefaultComboBoxModel;
 
 /**
  * Panel de movimientos de inventario.
@@ -60,6 +61,27 @@ public class MovimientosPanel extends JPanel {
     private final JLabel lblResumen = new JLabel("Movimientos: 0");
     private final JLabel lblNumeroMovimientoCabecera = new JLabel();
 
+    private boolean seleccionarProductoPorCodigo() {
+        String codigo = txtCodigoProducto.getText() == null ? "" : txtCodigoProducto.getText().trim();
+        if (codigo.isEmpty()) {
+            return false;
+        }
+        
+        actualizarCombos(); // <--- AGREGA ESTO PARA RESTAURAR LA LISTA COMPLETA
+        
+        for (int i = 0; i < cbProductoLinea.getItemCount(); i++) {
+            String item = cbProductoLinea.getItemAt(i);
+            if (extraerClave(item).equalsIgnoreCase(codigo)) {
+                cbProductoLinea.setSelectedIndex(i);
+                return true;
+            }
+        }
+        mostrarError("No existe el producto con codigo: " + codigo);
+        txtCodigoProducto.requestFocusInWindow();
+        txtCodigoProducto.selectAll();
+        return false;
+    }
+    
     /**
      * Construye la vista de movimientos y conecta eventos.
      */
@@ -69,6 +91,25 @@ public class MovimientosPanel extends JPanel {
         setLayout(new BorderLayout(0, 14));
         setBackground(Interfaz.BG_MAIN);
         setBorder(new EmptyBorder(20, 28, 20, 28));
+         JPanel centro = new JPanel(new BorderLayout(0, 14));
+         
+         JPanel registro = construirPanelRegistro();
+        JPanel historial = construirPanelHistorial();
+
+         
+        centro.setBackground(Interfaz.BG_MAIN);
+        centro.add(registro, BorderLayout.NORTH);
+        centro.add(historial, BorderLayout.CENTER);
+        
+        // 1. Creamos el scroll general y metemos el panel 'centro' dentro
+        JScrollPane scrollGeneral = new JScrollPane(centro);
+        scrollGeneral.setBorder(null);
+        scrollGeneral.getVerticalScrollBar().setUnitIncrement(16); // Hace que la rueda del mouse baje fluido
+        scrollGeneral.getViewport().setBackground(Interfaz.BG_MAIN); // Mantiene tu color de fondo oscuro
+        
+        // 2. Agregamos el scrollGeneral a la vista principal (reemplazando el add(centro...))
+        add(scrollGeneral, BorderLayout.CENTER);
+
 
         JPanel cabecera = new JPanel(new BorderLayout(20, 0));
         cabecera.setBackground(Interfaz.BG_MAIN);
@@ -79,25 +120,60 @@ public class MovimientosPanel extends JPanel {
         cabecera.add(titulo, BorderLayout.CENTER);
         cabecera.add(lblNumeroMovimientoCabecera, BorderLayout.EAST);
         add(cabecera, BorderLayout.NORTH);
-
-        JPanel registro = construirPanelRegistro();
-        JPanel historial = construirPanelHistorial();
-
-        JPanel centro = new JPanel(new BorderLayout(0, 14));
-        centro.setBackground(Interfaz.BG_MAIN);
-        centro.add(registro, BorderLayout.NORTH);
-        centro.add(historial, BorderLayout.CENTER);
-        add(centro, BorderLayout.CENTER);
-
+        
         cbFiltroProducto.addActionListener(e -> cargarHistorial());
 
         refrescar();
     }
 
+    private JPanel crearBarraBusquedaTabla(String etiqueta, JTable tabla, DefaultTableModel modelo) {
+        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+        panel.setBackground(Interfaz.BG_MAIN);
+        
+        JLabel lbl = new JLabel(etiqueta);
+        lbl.setForeground(java.awt.Color.WHITE);
+        lbl.setFont(new Font("SansSerif", Font.BOLD, 13));
+        
+        JTextField txtBuscar = new JTextField();
+        txtBuscar.setPreferredSize(new Dimension(250, 32));
+        txtBuscar.setBackground(Interfaz.BG_PANEL);
+        txtBuscar.setForeground(java.awt.Color.WHITE);
+        txtBuscar.setCaretColor(java.awt.Color.WHITE);
+        txtBuscar.setBorder(javax.swing.BorderFactory.createCompoundBorder(
+                javax.swing.BorderFactory.createLineBorder(Interfaz.BORDER_COLOR),
+                new javax.swing.border.EmptyBorder(0, 5, 0, 5)
+        ));
+
+        // Magia de filtrado: TableRowSorter
+        javax.swing.table.TableRowSorter<DefaultTableModel> sorter = new javax.swing.table.TableRowSorter<>(modelo);
+        tabla.setRowSorter(sorter);
+
+        // Evento que detecta cada vez que escribes o borras una letra
+        txtBuscar.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { filtrar(); }
+            @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { filtrar(); }
+            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { filtrar(); }
+            
+            private void filtrar() {
+                String texto = txtBuscar.getText();
+                if (texto.trim().isEmpty()) {
+                    sorter.setRowFilter(null); // Muestra todo si está vacío
+                } else {
+                    // "(?i)" hace que ignore mayúsculas y minúsculas al buscar
+                    sorter.setRowFilter(javax.swing.RowFilter.regexFilter("(?i)" + texto));
+                }
+            }
+        });
+
+        panel.add(lbl);
+        panel.add(txtBuscar);
+        return panel;
+    }
+    
     /**
      * Recarga combo de productos, info de stock y tabla de historial.
      */
-    public void refrescar() {
+   public void refrescar() {
         actualizarCombos();
         cargarStockActual();
         cargarHistorial();
@@ -106,7 +182,7 @@ public class MovimientosPanel extends JPanel {
         txtCantidadLinea.setText("1");
         txtCodigoProducto.requestFocusInWindow();
     }
-
+   
     private void actualizarNumeroMovimientoEncabezado() {
         int n = service.obtenerSiguienteNumeroMovimiento();
         lblNumeroMovimientoCabecera.setText("No. movimiento (siguiente): " + n);
@@ -124,8 +200,10 @@ public class MovimientosPanel extends JPanel {
         titulo.setForeground(java.awt.Color.WHITE);
         titulo.setFont(new Font("SansSerif", Font.BOLD, 15));
 
-        Interfaz.estilizarCombo(cbTipoMovimiento);
+       Interfaz.estilizarCombo(cbTipoMovimiento);
         Interfaz.estilizarCombo(cbProductoLinea);
+        configurarBuscadorProducto(); 
+        
         txtFecha.setText(LocalDateTime.now().format(FORMATO_FECHA));
         txtCantidadLinea.setText("1");
         txtCodigoProducto.setToolTipText("Escanea o escribe el codigo (clave) y presiona Enter");
@@ -205,7 +283,7 @@ public class MovimientosPanel extends JPanel {
 
         JPanel botones = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         botones.setBackground(Interfaz.BG_PANEL);
-        var btnLimpiar = Interfaz.botonSecundario("Limpiar");
+        var btnLimpiar = Interfaz.botonSecundario("Limpiar registro");
         var btnRegistrar = Interfaz.botonPrimario("Registrar");
         btnLimpiar.addActionListener(e -> limpiarFormulario());
         btnRegistrar.addActionListener(e -> registrarMovimiento());
@@ -228,108 +306,137 @@ public class MovimientosPanel extends JPanel {
         return contenedor;
     }
 
-    private JPanel construirPanelHistorial() {
-        JPanel panel = new JPanel(new BorderLayout(0, 8));
-        panel.setBackground(Interfaz.BG_MAIN);
+  private JPanel construirPanelHistorial() {
+    // Panel principal con scroll interno (si el contenedor padre no tiene scroll, se puede ajustar aquí)
+    JPanel panel = new JPanel(new BorderLayout(0, 20)); 
+    panel.setBackground(Interfaz.BG_MAIN);
+    panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 
-        // Tabla stock actual
-        JPanel stockPanel = new JPanel(new BorderLayout(0, 8));
-        stockPanel.setBackground(Interfaz.BG_MAIN);
-        JLabel lblStock = new JLabel("Stock actual de productos");
-        lblStock.setForeground(Color.WHITE);
-        lblStock.setFont(new Font("SansSerif", Font.BOLD, 13));
+    JPanel stockPanel = new JPanel(new BorderLayout(0, 8));
+    stockPanel.setBackground(Interfaz.BG_MAIN);
 
-        modeloStock = new DefaultTableModel(new Object[]{"CLAVE", "PRODUCTO", "STOCK", "MINIMO", "ESTADO"}, 0) {
-            @Override
-            public boolean isCellEditable(int row, int column) {
-                return false;
-            }
-        };
-        tablaStock = new JTable(modeloStock);
-        tablaStock.setBackground(Interfaz.BG_PANEL);
-        tablaStock.setForeground(Interfaz.TEXT_LIGHT);
-        tablaStock.setRowHeight(32);
-        tablaStock.setGridColor(Interfaz.BORDER_COLOR);
-        tablaStock.setShowVerticalLines(false);
-        tablaStock.getTableHeader().setBackground(Interfaz.BG_SIDEBAR);
-        tablaStock.getTableHeader().setForeground(Interfaz.TEXT_MUTED);
-        tablaStock.getTableHeader().setFont(new Font("SansSerif", Font.BOLD, 11));
-        DefaultTableCellRenderer center = new DefaultTableCellRenderer();
-        center.setHorizontalAlignment(SwingConstants.CENTER);
-        tablaStock.getColumnModel().getColumn(0).setCellRenderer(center);
-        tablaStock.getColumnModel().getColumn(2).setCellRenderer(center);
-        tablaStock.getColumnModel().getColumn(3).setCellRenderer(center);
-        tablaStock.getColumnModel().getColumn(4).setCellRenderer(new EstadoStockRenderer());
+    // Configuración de Modelo y Tabla de Stock
+    modeloStock = new DefaultTableModel(new Object[]{"CLAVE", "PRODUCTO", "STOCK", "MINIMO", "ESTADO"}, 0) {
+        @Override public boolean isCellEditable(int row, int column) { return false; }
+    };
+    tablaStock = new JTable(modeloStock);
+    
+    // Estilos de la tabla Stock
+    tablaStock.setBackground(Interfaz.BG_PANEL);
+    tablaStock.setForeground(Interfaz.TEXT_LIGHT);
+    tablaStock.setRowHeight(32);
+    tablaStock.setGridColor(Interfaz.BORDER_COLOR);
+    tablaStock.setShowVerticalLines(false);
+    tablaStock.getTableHeader().setBackground(Interfaz.BG_SIDEBAR);
+    tablaStock.getTableHeader().setForeground(Interfaz.TEXT_MUTED);
+    tablaStock.getTableHeader().setFont(new Font("SansSerif", Font.BOLD, 11));
 
-        JScrollPane scrollStock = new JScrollPane(tablaStock);
-        scrollStock.getViewport().setBackground(Interfaz.BG_PANEL);
-        scrollStock.setBorder(BorderFactory.createLineBorder(Interfaz.BORDER_COLOR));
+    // Renderers para Stock
+    DefaultTableCellRenderer center = new DefaultTableCellRenderer();
+    center.setHorizontalAlignment(SwingConstants.CENTER);
+    tablaStock.getColumnModel().getColumn(0).setCellRenderer(center);
+    tablaStock.getColumnModel().getColumn(2).setCellRenderer(center);
+    tablaStock.getColumnModel().getColumn(3).setCellRenderer(center);
+    tablaStock.getColumnModel().getColumn(4).setCellRenderer(new EstadoStockRenderer());
 
-        stockPanel.add(lblStock, BorderLayout.NORTH);
-        stockPanel.add(scrollStock, BorderLayout.CENTER);
+    // Evento: Al hacer clic en el stock, se filtra el historial automáticamente
+    tablaStock.getSelectionModel().addListSelectionListener(e -> {
+        if (!e.getValueIsAdjusting() && tablaStock.getSelectedRow() >= 0) {
+            int fila = tablaStock.getSelectedRow();
+            // IMPORTANTE: Usar convertRowIndexToModel por si la tabla está filtrada
+            int modelRow = tablaStock.convertRowIndexToModel(fila);
+            String clave = (String) modeloStock.getValueAt(modelRow, 0);
+            String nombre = (String) modeloStock.getValueAt(modelRow, 1);
+            cbFiltroProducto.setSelectedItem(clave + " - " + nombre);
+        }
+    });
 
-        JPanel barra = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
-        barra.setBackground(Interfaz.BG_MAIN);
-        JLabel lblFiltro = new JLabel("Historial por producto:");
-        lblFiltro.setForeground(Interfaz.TEXT_LIGHT);
-        Interfaz.estilizarCombo(cbFiltroProducto);
-        cbFiltroProducto.setPreferredSize(new Dimension(280, 32));
-        var btnVerTodos = Interfaz.botonSecundario("Ver todos");
-        btnVerTodos.addActionListener(e -> {
-            if (cbFiltroProducto.getItemCount() > 0) {
-                cbFiltroProducto.setSelectedIndex(0);
-            }
-            cargarHistorial();
-        });
-        barra.add(lblFiltro);
-        barra.add(cbFiltroProducto);
-        barra.add(btnVerTodos);
+    JScrollPane scrollStock = new JScrollPane(tablaStock);
+    scrollStock.getViewport().setBackground(Interfaz.BG_PANEL);
+    scrollStock.setBorder(BorderFactory.createLineBorder(Interfaz.BORDER_COLOR));
+    scrollStock.setPreferredSize(new Dimension(0, 250)); // Altura fija para no desplazar todo
 
-        modeloHistorial = new DefaultTableModel(
-                new Object[]{"NO.", "ID", "FECHA", "PRODUCTO", "TIPO", "CANTIDAD", "STOCK ANTES", "STOCK DESPUES", "MOTIVO"}, 0) {
-            @Override
-            public boolean isCellEditable(int row, int column) {
-                return false;
-            }
-        };
+    // Buscador para la tabla de Stock
+    JPanel barraBusquedaStock = crearBarraBusquedaTabla("Stock Actual (Buscar):", tablaStock, modeloStock);
 
-        JTable tabla = new JTable(modeloHistorial);
-        tabla.setBackground(Interfaz.BG_PANEL);
-        tabla.setForeground(Interfaz.TEXT_LIGHT);
-        tabla.setRowHeight(34);
-        tabla.setGridColor(Interfaz.BORDER_COLOR);
-        tabla.setShowVerticalLines(false);
-        tabla.getTableHeader().setBackground(Interfaz.BG_SIDEBAR);
-        tabla.getTableHeader().setForeground(Interfaz.TEXT_MUTED);
-        tabla.getTableHeader().setFont(new Font("SansSerif", Font.BOLD, 11));
+    stockPanel.add(barraBusquedaStock, BorderLayout.NORTH);
+    stockPanel.add(scrollStock, BorderLayout.CENTER);
 
-        DefaultTableCellRenderer centerHist = new DefaultTableCellRenderer();
-        centerHist.setHorizontalAlignment(SwingConstants.CENTER);
-        tabla.getColumnModel().getColumn(0).setCellRenderer(centerHist);
-        tabla.getColumnModel().getColumn(1).setCellRenderer(centerHist);
-        tabla.getColumnModel().getColumn(2).setCellRenderer(centerHist);
-        tabla.getColumnModel().getColumn(4).setCellRenderer(centerHist);
-        tabla.getColumnModel().getColumn(5).setCellRenderer(new CantidadRenderer());
-        tabla.getColumnModel().getColumn(6).setCellRenderer(centerHist);
-        tabla.getColumnModel().getColumn(7).setCellRenderer(centerHist);
 
-        JScrollPane scroll = new JScrollPane(tabla);
-        scroll.getViewport().setBackground(Interfaz.BG_PANEL);
-        scroll.setBorder(BorderFactory.createLineBorder(Interfaz.BORDER_COLOR));
+    JPanel historialPanel = new JPanel(new BorderLayout(0, 8));
+    historialPanel.setBackground(Interfaz.BG_MAIN);
 
-        lblResumen.setForeground(Interfaz.TEXT_MUTED);
+    // Cabecera del historial: Fila 1 (Combo) + Fila 2 (Buscador Texto)
+    JPanel cabeceraHistorial = new JPanel(new GridLayout(2, 1, 0, 8));
+    cabeceraHistorial.setBackground(Interfaz.BG_MAIN);
 
-        JPanel historialPanel = new JPanel(new BorderLayout(0, 8));
-        historialPanel.setBackground(Interfaz.BG_MAIN);
-        historialPanel.add(barra, BorderLayout.NORTH);
-        historialPanel.add(scroll, BorderLayout.CENTER);
-        historialPanel.add(lblResumen, BorderLayout.SOUTH);
+    // Fila 1: Filtro por Producto (ComboBox)
+    JPanel filaCombo = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+    filaCombo.setBackground(Interfaz.BG_MAIN);
+    JLabel lblFiltro = new JLabel("Historial de:");
+    lblFiltro.setForeground(Interfaz.TEXT_LIGHT);
+    Interfaz.estilizarCombo(cbFiltroProducto);
+    cbFiltroProducto.setPreferredSize(new Dimension(280, 32));
+    
+    var btnVerTodos = Interfaz.botonSecundario("Ver todos");
+    btnVerTodos.addActionListener(e -> {
+        if (cbFiltroProducto.getItemCount() > 0) cbFiltroProducto.setSelectedIndex(0);
+        cargarHistorial();
+    });
+    
+    filaCombo.add(lblFiltro);
+    filaCombo.add(cbFiltroProducto);
+    filaCombo.add(btnVerTodos);
 
-        panel.add(stockPanel, BorderLayout.NORTH);
-        panel.add(historialPanel, BorderLayout.CENTER);
-        return panel;
-    }
+    // Configuración de Modelo y Tabla de Historial
+    modeloHistorial = new DefaultTableModel(
+            new Object[]{"NO.", "ID", "FECHA", "PRODUCTO", "TIPO", "CANTIDAD", "STOCK ANT.", "STOCK DESP.", "MOTIVO"}, 0) {
+        @Override public boolean isCellEditable(int row, int column) { return false; }
+    };
+    JTable tablaHist = new JTable(modeloHistorial);
+    
+    // Estilos de la tabla Historial
+    tablaHist.setBackground(Interfaz.BG_PANEL);
+    tablaHist.setForeground(Interfaz.TEXT_LIGHT);
+    tablaHist.setRowHeight(34);
+    tablaHist.setGridColor(Interfaz.BORDER_COLOR);
+    tablaHist.getTableHeader().setBackground(Interfaz.BG_SIDEBAR);
+    tablaHist.getTableHeader().setForeground(Interfaz.TEXT_MUTED);
 
+    // Renderers para Historial
+    DefaultTableCellRenderer centerHist = new DefaultTableCellRenderer();
+    centerHist.setHorizontalAlignment(SwingConstants.CENTER);
+    tablaHist.getColumnModel().getColumn(0).setCellRenderer(centerHist);
+    tablaHist.getColumnModel().getColumn(1).setCellRenderer(centerHist);
+    tablaHist.getColumnModel().getColumn(2).setCellRenderer(centerHist);
+    tablaHist.getColumnModel().getColumn(4).setCellRenderer(centerHist);
+    tablaHist.getColumnModel().getColumn(5).setCellRenderer(new CantidadRenderer());
+    tablaHist.getColumnModel().getColumn(6).setCellRenderer(centerHist);
+    tablaHist.getColumnModel().getColumn(7).setCellRenderer(centerHist);
+
+    // Fila 2: Buscador por Texto para el Historial
+    JPanel barraBusquedaHistorial = crearBarraBusquedaTabla("Buscar:", tablaHist, modeloHistorial);
+
+    cabeceraHistorial.add(filaCombo);
+    cabeceraHistorial.add(barraBusquedaHistorial);
+
+    JScrollPane scrollHist = new JScrollPane(tablaHist);
+    scrollHist.getViewport().setBackground(Interfaz.BG_PANEL);
+    scrollHist.setBorder(BorderFactory.createLineBorder(Interfaz.BORDER_COLOR));
+    scrollHist.setPreferredSize(new Dimension(0, 300)); // Altura para el historial
+
+    lblResumen.setForeground(Interfaz.TEXT_MUTED);
+
+    historialPanel.add(cabeceraHistorial, BorderLayout.NORTH);
+    historialPanel.add(scrollHist, BorderLayout.CENTER);
+    historialPanel.add(lblResumen, BorderLayout.SOUTH);
+
+    
+    panel.add(stockPanel, BorderLayout.NORTH);
+    panel.add(historialPanel, BorderLayout.CENTER);
+
+    return panel;
+}
     private void actualizarCombos() {
         String seleccionadoLinea = (String) cbProductoLinea.getSelectedItem();
         String seleccionadoFiltro = (String) cbFiltroProducto.getSelectedItem();
@@ -360,24 +467,6 @@ public class MovimientosPanel extends JPanel {
         }
     }
 
-    private boolean seleccionarProductoPorCodigo() {
-        String codigo = txtCodigoProducto.getText() == null ? "" : txtCodigoProducto.getText().trim();
-        if (codigo.isEmpty()) {
-            return false;
-        }
-        for (int i = 0; i < cbProductoLinea.getItemCount(); i++) {
-            String item = cbProductoLinea.getItemAt(i);
-            if (extraerClave(item).equalsIgnoreCase(codigo)) {
-                cbProductoLinea.setSelectedIndex(i);
-                return true;
-            }
-        }
-        mostrarError("No existe el producto con codigo: " + codigo);
-        txtCodigoProducto.requestFocusInWindow();
-        txtCodigoProducto.selectAll();
-        return false;
-    }
-
     private void cargarStockActual() {
         modeloStock.setRowCount(0);
         List<Producto> productos = service.obtenerProductosOrdenados();
@@ -392,6 +481,19 @@ public class MovimientosPanel extends JPanel {
         }
     }
 
+    private void ejecutarLimpieza() {
+    // Aquí va solo la acción de borrar, sin JOptionPanes
+    txtMotivo.setText("");
+    txtFecha.setText(LocalDateTime.now().format(FORMATO_FECHA));
+    if (cbTipoMovimiento.getItemCount() > 0) {
+        cbTipoMovimiento.setSelectedIndex(0);
+    }
+    txtCantidadLinea.setText("1");
+    txtCodigoProducto.setText("");
+    modeloDetalle.setRowCount(0);
+    txtCodigoProducto.requestFocusInWindow();
+}
+    
     private void agregarLinea() {
         List<String> errores = new ArrayList<>();
         // Si viene de escaner, intenta seleccionar por codigo antes de tomar el combo
@@ -438,7 +540,7 @@ public class MovimientosPanel extends JPanel {
     }
 
     private void registrarMovimiento() {
-        List<String> errores = new ArrayList<>();
+       List<String> errores = new ArrayList<>();
 
         String tipo = (String) cbTipoMovimiento.getSelectedItem();
         if (tipo == null || tipo.isBlank()) {
@@ -446,10 +548,18 @@ public class MovimientosPanel extends JPanel {
         }
 
         LocalDateTime fecha = leerFecha(txtFecha.getText().trim(), "Fecha", errores);
+        
+        // --- CAMBIO AQUÍ: Validación condicional del Motivo ---
         String motivo = txtMotivo.getText().trim();
-        if (motivo.isBlank()) {
-            errores.add("Motivo: esta vacio.");
+        if (tipo != null && tipo.equalsIgnoreCase("AJUSTE") && motivo.isBlank()) {
+            errores.add("Motivo: es obligatorio para movimientos de tipo AJUSTE.");
         }
+        
+        // Si no es ajuste y está vacío, le ponemos un texto por defecto para que no sea null
+        if (motivo.isBlank()) {
+            motivo = "Sin motivo";
+        }
+        // ------------------------------------------------------
 
         if (modeloDetalle.getRowCount() == 0) {
             errores.add("Detalle: agrega al menos un producto.");
@@ -468,7 +578,6 @@ public class MovimientosPanel extends JPanel {
                 lineas.add(new MovimientoLinea(clave, cant));
             }
 
-            // Advertencia sobreinventario (entrada)
             List<String> advertencias = service.previsualizarAdvertenciasSobreinventario(tipo, lineas);
             if (!advertencias.isEmpty()) {
                 StringBuilder sb = new StringBuilder("Advertencia de sobreinventario:")
@@ -488,8 +597,9 @@ public class MovimientosPanel extends JPanel {
                 }
             }
 
+            // Usamos la variable 'motivo' que ya procesamos arriba
             MovimientoEncabezado movimiento = service.registrarMovimiento(tipo, fecha, motivo, lineas);
-            limpiarFormulario();
+            ejecutarLimpieza();
             onDataChanged.run();
             cargarStockActual();
             cargarHistorial();
@@ -502,7 +612,53 @@ public class MovimientosPanel extends JPanel {
             mostrarError(ex.getMessage());
         }
     }
+private void configurarBuscadorProducto() {
+        cbProductoLinea.setEditable(true);
+        javax.swing.JTextField txtEditor = (javax.swing.JTextField) cbProductoLinea.getEditor().getEditorComponent();
+        
+        // Estilizar el editor de texto para que coincida con el tema oscuro
+        txtEditor.setBackground(Interfaz.BG_PANEL);
+        txtEditor.setForeground(Color.WHITE);
+        txtEditor.setCaretColor(Color.WHITE);
+        txtEditor.setBorder(javax.swing.BorderFactory.createEmptyBorder(2, 5, 2, 5));
 
+        txtEditor.addKeyListener(new java.awt.event.KeyAdapter() {
+            @Override
+            public void keyReleased(java.awt.event.KeyEvent e) {
+                int keyCode = e.getKeyCode();
+                // Ignorar teclas de navegación (flechas, enter, escape)
+                if (keyCode == KeyEvent.VK_UP || keyCode == KeyEvent.VK_DOWN || 
+                    keyCode == KeyEvent.VK_ENTER || keyCode == KeyEvent.VK_ESCAPE ||
+                    keyCode == KeyEvent.VK_LEFT || keyCode == KeyEvent.VK_RIGHT) {
+                    return;
+                }
+
+                String textoBusqueda = txtEditor.getText().toLowerCase();
+                
+                // Obtener productos y filtrar coincidencias (por nombre o clave)
+                List<Producto> productos = service.obtenerProductosOrdenados();
+                List<String> filtrados = new ArrayList<>();
+                for (Producto p : productos) {
+                    String item = p.getClave() + " - " + p.getNombre();
+                    if (item.toLowerCase().contains(textoBusqueda)) {
+                        filtrados.add(item);
+                    }
+                }
+
+                // Actualizar el modelo del JComboBox
+                cbProductoLinea.setModel(new DefaultComboBoxModel<>(filtrados.toArray(new String[0])));
+                cbProductoLinea.setSelectedItem(null); // Evitar que autoseleccione y borre lo escrito
+                txtEditor.setText(textoBusqueda); // Restaurar el texto del usuario
+
+                // Ocultar y mostrar el popup para que se actualice visualmente
+                cbProductoLinea.hidePopup();
+                if (!filtrados.isEmpty()) {
+                    cbProductoLinea.showPopup();
+                }
+            }
+        });
+    }
+    
     private void cargarHistorial() {
         modeloHistorial.setRowCount(0);
         String item = (String) cbFiltroProducto.getSelectedItem();
@@ -547,15 +703,17 @@ public class MovimientosPanel extends JPanel {
 
 
     private void limpiarFormulario() {
-        txtMotivo.setText("");
-        txtFecha.setText(LocalDateTime.now().format(FORMATO_FECHA));
-        if (cbTipoMovimiento.getItemCount() > 0) {
-            cbTipoMovimiento.setSelectedIndex(0);
-        }
-        txtCantidadLinea.setText("1");
-        txtCodigoProducto.setText("");
-        modeloDetalle.setRowCount(0);
-        txtCodigoProducto.requestFocusInWindow();
+      int confirmacion = javax.swing.JOptionPane.showConfirmDialog(
+            this,
+            "Se limpiarán los productos agregados sin ningún cambio en el inventario. ¿Deseas continuar?",
+            "Confirmar limpieza",
+            javax.swing.JOptionPane.YES_NO_OPTION,
+            javax.swing.JOptionPane.WARNING_MESSAGE
+    );
+
+    if (confirmacion == javax.swing.JOptionPane.YES_OPTION) {
+        ejecutarLimpieza(); // Llamamos al método que borra
+    }
     }
 
     private JPanel crearCampo(String etiqueta, java.awt.Component campo) {

@@ -179,11 +179,11 @@ public class InventarioService {
         }
 
         String motivoLimpio = motivo == null ? "" : motivo.trim();
-        if (motivoLimpio.isEmpty()) {
-            // En el requerimiento, al menos para ajuste es obligatorio; lo hacemos obligatorio para todos.
-            errores.add("Motivo: esta vacio.");
+        // Solo validamos que no esté vacío si el tipo de movimiento es "Ajuste"
+        if ("Ajuste".equalsIgnoreCase(tipoNorm) && motivoLimpio.isEmpty()) {
+            errores.add("Motivo: es obligatorio para los ajustes.");
         }
-
+        
         if (lineas == null || lineas.isEmpty()) {
             errores.add("Detalle: agrega al menos un producto.");
         }
@@ -215,8 +215,10 @@ public class InventarioService {
                 continue;
             }
 
-            int cantidad = linea.getCantidad();
+          int cantidad = linea.getCantidad();
+            int stockAntes = producto.getStockActual(); // Lo movemos arriba para usarlo en el Ajuste
             int ajuste = 0;
+
             if ("Entrada".equalsIgnoreCase(tipoNorm)) {
                 if (cantidad <= 0) {
                     errores.add("Cantidad (" + producto.getClave() + "): para entrada debe ser mayor que 0.");
@@ -230,14 +232,15 @@ public class InventarioService {
                 }
                 ajuste = -cantidad;
             } else if ("Ajuste".equalsIgnoreCase(tipoNorm)) {
-                if (cantidad == 0) {
-                    errores.add("Cantidad (" + producto.getClave() + "): para ajuste no puede ser 0.");
+                if (cantidad < 0) { 
+                    // Para un ajuste, normalmente permitimos 0 (por si se perdió todo), pero no negativos.
+                    errores.add("Cantidad (" + producto.getClave() + "): para ajuste no puede ser negativa.");
                     continue;
                 }
-                ajuste = cantidad;
+                // Calculamos la diferencia exacta para que el stock final termine siendo la 'cantidad' ingresada
+                ajuste = cantidad - stockAntes; 
             }
 
-            int stockAntes = producto.getStockActual();
             int stockDespues = stockAntes + ajuste;
             if ("Salida".equalsIgnoreCase(tipoNorm) && cantidad > stockAntes) {
                 errores.add("Cantidad (" + producto.getClave() + "): supera el stock disponible (" + stockAntes + ").");
