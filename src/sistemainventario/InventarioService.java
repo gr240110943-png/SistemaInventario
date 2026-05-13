@@ -29,6 +29,7 @@ public class InventarioService {
     private List<Producto> productos = new ArrayList<>();
     private List<MovimientoEncabezado> movimientosEncabezado = new ArrayList<>();
     private List<MovimientoDetalle> movimientosDetalle = new ArrayList<>();
+    private ParametrosConfiguracion configuracion;
     private int siguienteNumeroMovimiento = 1;
 
     /**
@@ -47,6 +48,7 @@ public class InventarioService {
         try {
             repository.asegurarArchivoMovimientos();
             productos = repository.cargarProductos();
+            configuracion = repository.cargarConfiguracion();
             // Nuevo esquema
             movimientosEncabezado = repository.cargarMovimientosEncabezado();
             movimientosDetalle = repository.cargarMovimientosDetalle();
@@ -410,6 +412,39 @@ public class InventarioService {
      */
     public int obtenerSiguienteNumeroMovimiento() {
         return siguienteNumeroMovimiento;
+    }
+
+    public ParametrosConfiguracion obtenerConfiguracion() {
+        return configuracion;
+    }
+
+    public void guardarConfiguracion(ParametrosConfiguracion nuevaConfiguracion) throws InventarioException {
+        validarConfiguracion(nuevaConfiguracion);
+        configuracion = nuevaConfiguracion;
+        try {
+            repository.guardarConfiguracion(configuracion);
+        } catch (IOException ex) {
+            throw new InventarioException("No se pudo guardar configuracion: " + ex.getMessage());
+        }
+    }
+
+    private void validarConfiguracion(ParametrosConfiguracion cfg) throws InventarioException {
+        List<String> errores = new ArrayList<>();
+        if (cfg == null) {
+            throw new InventarioException("Configuracion invalida.");
+        }
+        if (cfg.getCostoPedido() <= 0) {
+            errores.add("Costo por pedido: debe ser mayor que 0.");
+        }
+        if (cfg.getCostoMantenimiento() <= 0) {
+            errores.add("Costo de mantenimiento: debe ser mayor que 0.");
+        }
+        if (cfg.getTiempoEntrega() <= 0) {
+            errores.add("Tiempo de entrega: debe ser un numero entero mayor que 0.");
+        }
+        if (!errores.isEmpty()) {
+            throw new InventarioException(construirMensajeErrores("No se pudo guardar la configuracion. Revisa:", errores));
+        }
     }
 
     private void validarProducto(Producto producto, boolean esEdicion) throws InventarioException {

@@ -38,6 +38,8 @@ import java.awt.KeyboardFocusManager;
 import java.awt.Window;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.awt.event.WindowFocusListener;
@@ -54,10 +56,9 @@ import java.util.List;
  */
 public class CatalogoPanel extends JPanel {
 
-    private static final Dimension DIMENSION_CAMPO_FORM = new Dimension(420, 42);
-    private static final Dimension DIMENSION_CAMPO_TEXTO_LARGO = new Dimension(420, 86);
-    private static final Dimension DIMENSION_DIALOGO_FORM = new Dimension(1060, 720);
-    private static final Dimension DIMENSION_DIALOGO_VER = new Dimension(1200, 780);
+    private static final Dimension DIMENSION_CAMPO_FORM = new Dimension(300, 34);
+    private static final Dimension DIMENSION_DIALOGO_FORM = new Dimension(820, 420);
+    private static final Dimension DIMENSION_DIALOGO_VER = new Dimension(920, 440);
 
     private final InventarioService service;
     private final Runnable onDataChanged;
@@ -116,6 +117,13 @@ public class CatalogoPanel extends JPanel {
 
         barra.add(izquierda, BorderLayout.WEST);
         barra.add(derecha, BorderLayout.EAST);
+        barra.setPreferredSize(new Dimension(1040, 42));
+
+        JScrollPane scrollBarra = new JScrollPane(barra);
+        scrollBarra.setBorder(null);
+        scrollBarra.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_NEVER);
+        scrollBarra.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+        scrollBarra.getViewport().setBackground(Interfaz.BG_MAIN);
 
         modeloTabla = new DefaultTableModel(new Object[]{"CLAVE", "NOMBRE", "CATEGORIA", "COSTO", "PRECIO", "STOCK", "ESTADO"}, 0) {
             @Override
@@ -144,6 +152,15 @@ public class CatalogoPanel extends JPanel {
         tabla.getTableHeader().setFont(new Font("SansSerif", Font.BOLD, 11));
         tabla.setSelectionBackground(new java.awt.Color(56, 56, 64));
         tabla.setSelectionForeground(java.awt.Color.WHITE);
+        tabla.setToolTipText("Selecciona una fila y presiona Editar, o haz doble clic para modificar el producto.");
+        tabla.addMouseListener(new MouseAdapter() {
+            @Override
+            public void mouseClicked(MouseEvent e) {
+                if (e.getClickCount() == 2 && tabla.getSelectedRow() >= 0) {
+                    editarProductoSeleccionado();
+                }
+            }
+        });
 
         DefaultTableCellRenderer center = new DefaultTableCellRenderer();
         center.setHorizontalAlignment(SwingConstants.CENTER);
@@ -158,12 +175,18 @@ public class CatalogoPanel extends JPanel {
 
         JScrollPane scroll = new JScrollPane(tabla);
         scroll.getViewport().setBackground(Interfaz.BG_PANEL);
+        scroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
+        scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
         scroll.setBorder(BorderFactory.createLineBorder(Interfaz.BORDER_COLOR));
 
         JPanel centro = new JPanel(new BorderLayout());
         centro.setBackground(Interfaz.BG_MAIN);
-        centro.add(barra, BorderLayout.NORTH);
+        centro.add(scrollBarra, BorderLayout.NORTH);
         centro.add(scroll, BorderLayout.CENTER);
+        JLabel ayudaSeleccion = new JLabel("Para modificar: selecciona un producto en la tabla y pulsa Editar. Tambien puedes hacer doble clic sobre la fila.");
+        ayudaSeleccion.setForeground(Interfaz.TEXT_MUTED);
+        ayudaSeleccion.setBorder(new EmptyBorder(8, 0, 0, 0));
+        centro.add(ayudaSeleccion, BorderLayout.SOUTH);
         add(centro, BorderLayout.CENTER);
 
         txtBuscar.getDocument().addDocumentListener(new DocumentListener() {
@@ -432,6 +455,13 @@ public class CatalogoPanel extends JPanel {
 
         JPanel panel = new JPanel(new GridLayout(0, 2, 10, 8));
         panel.setBackground(Interfaz.BG_MAIN);
+        JLabel lblProductoActual = new JLabel(base == null
+                ? "Producto nuevo"
+                : "Editando: " + base.getClave() + " - " + base.getNombre());
+        lblProductoActual.setForeground(java.awt.Color.WHITE);
+        lblProductoActual.setFont(new Font("SansSerif", Font.BOLD, 14));
+        panel.add(lblProductoActual);
+        panel.add(new JLabel(""));
         panel.add(crearCampo("Clave *", txtClave));
         panel.add(crearCampo("Nombre *", txtNombre));
         panel.add(crearCampo("Categoria *", cbCategoria));
@@ -536,8 +566,12 @@ public class CatalogoPanel extends JPanel {
         p.setBackground(Interfaz.BG_MAIN);
         JLabel lbl = new JLabel(etiqueta);
         lbl.setForeground(Interfaz.TEXT_LIGHT);
+        JPanel contenedorCampo = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        contenedorCampo.setBackground(Interfaz.BG_MAIN);
+        campo.setPreferredSize(DIMENSION_CAMPO_FORM);
+        contenedorCampo.add(campo);
         p.add(lbl, BorderLayout.NORTH);
-        p.add(campo, BorderLayout.CENTER);
+        p.add(contenedorCampo, BorderLayout.CENTER);
         return p;
     }
 
@@ -552,20 +586,57 @@ public class CatalogoPanel extends JPanel {
     }
 
     private int mostrarDialogoFormulario(JPanel contenido, String titulo, JComponent focoInicial) {
-        JOptionPane optionPane = new JOptionPane(
-                contenido,
-                JOptionPane.PLAIN_MESSAGE,
-                JOptionPane.OK_CANCEL_OPTION
-        );
+        final int[] resultado = {JOptionPane.CANCEL_OPTION};
+        JDialog dialog = new JDialog(SwingUtilities.getWindowAncestor(this), titulo, Dialog.ModalityType.APPLICATION_MODAL);
+        dialog.getContentPane().setBackground(Interfaz.BG_MAIN);
+        dialog.setLayout(new BorderLayout(0, 10));
+
+        JScrollPane scrollContenido = crearScrollDialogo(contenido, DIMENSION_DIALOGO_FORM);
+        dialog.add(scrollContenido, BorderLayout.CENTER);
+
+        JPanel botones = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 8));
+        botones.setBackground(Interfaz.BG_MAIN);
+        JButton btnCancelar = Interfaz.botonSecundario("Cancelar");
+        JButton btnGuardar = Interfaz.botonPrimario("Guardar");
+        btnCancelar.addActionListener(e -> {
+            resultado[0] = JOptionPane.CANCEL_OPTION;
+            dialog.dispose();
+        });
+        btnGuardar.addActionListener(e -> {
+            resultado[0] = JOptionPane.OK_OPTION;
+            dialog.dispose();
+        });
+        botones.add(btnCancelar);
+        botones.add(btnGuardar);
+        dialog.add(botones, BorderLayout.SOUTH);
+
+        dialog.setSize(880, 560);
+        dialog.setMinimumSize(new Dimension(700, 420));
+        dialog.setResizable(true);
+        dialog.setLocationRelativeTo(this);
+
         if (focoInicial != null) {
-            optionPane.setInitialSelectionValue(focoInicial);
+            dialog.addWindowListener(new WindowAdapter() {
+                @Override
+                public void windowOpened(WindowEvent e) {
+                    SwingUtilities.invokeLater(() -> {
+                        focoInicial.requestFocusInWindow();
+                        if (focoInicial instanceof JTextField t) {
+                            t.selectAll();
+                        }
+                    });
+                }
+            });
         }
-        return mostrarDialogoConEstilo(optionPane, titulo, focoInicial);
+
+        dialog.setVisible(true);
+        return resultado[0];
     }
 
     private void mostrarDialogoSoloLectura(JPanel contenido, String titulo) {
+        JScrollPane scrollContenido = crearScrollDialogo(contenido, DIMENSION_DIALOGO_VER);
         JOptionPane optionPane = new JOptionPane(
-                contenido,
+                scrollContenido,
                 JOptionPane.PLAIN_MESSAGE,
                 JOptionPane.DEFAULT_OPTION,
                 null,
@@ -573,6 +644,17 @@ public class CatalogoPanel extends JPanel {
                 "Cerrar"
         );
         mostrarDialogoConEstilo(optionPane, titulo, null);
+    }
+
+    private JScrollPane crearScrollDialogo(JPanel contenido, Dimension tamano) {
+        JScrollPane scroll = new JScrollPane(contenido);
+        scroll.setPreferredSize(tamano);
+        scroll.setBorder(BorderFactory.createLineBorder(Interfaz.BORDER_COLOR));
+        scroll.getViewport().setBackground(Interfaz.BG_MAIN);
+        scroll.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
+        scroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
+        scroll.getVerticalScrollBar().setUnitIncrement(16);
+        return scroll;
     }
 
     private int mostrarDialogoConEstilo(JOptionPane optionPane, String titulo, JComponent focoInicial) {
@@ -583,7 +665,7 @@ public class CatalogoPanel extends JPanel {
         JDialog dialog = optionPane.createDialog(this, titulo);
         dialog.getContentPane().setBackground(Interfaz.BG_MAIN);
         aplicarTemaDialogo(dialog.getContentPane());
-        dialog.setResizable(false);
+        dialog.setResizable(true);
         dialog.setAutoRequestFocus(true);
         // Evita que el botón OK tome el foco por defecto
         dialog.getRootPane().setDefaultButton(null);

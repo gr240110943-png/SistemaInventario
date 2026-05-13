@@ -9,8 +9,10 @@ import javax.swing.JScrollPane;
 import javax.swing.JTable;
 import javax.swing.JTextField;
 import javax.swing.SwingConstants;
+import javax.swing.SwingUtilities;
 import javax.swing.KeyStroke;
 import javax.swing.JComponent;
+import javax.swing.JDialog;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
@@ -18,6 +20,7 @@ import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
 import java.awt.Color;
 import java.awt.BorderLayout;
+import java.awt.Dialog;
 import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
@@ -99,7 +102,6 @@ public class MovimientosPanel extends JPanel {
          
         centro.setBackground(Interfaz.BG_MAIN);
         centro.add(registro, BorderLayout.NORTH);
-        centro.add(historial, BorderLayout.CENTER);
         
         // 1. Creamos el scroll general y metemos el panel 'centro' dentro
         JScrollPane scrollGeneral = new JScrollPane(centro);
@@ -117,8 +119,17 @@ public class MovimientosPanel extends JPanel {
         lblNumeroMovimientoCabecera.setForeground(Interfaz.ACCENT_BLUE);
         lblNumeroMovimientoCabecera.setFont(new Font("SansSerif", Font.BOLD, 15));
         lblNumeroMovimientoCabecera.setHorizontalAlignment(SwingConstants.RIGHT);
+        JPanel accesosRapidos = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        accesosRapidos.setBackground(Interfaz.BG_MAIN);
+        var btnAbrirStock = Interfaz.botonSecundario("Abrir Stock Actual");
+        var btnAbrirHistorial = Interfaz.botonSecundario("Abrir Historial");
+        btnAbrirStock.addActionListener(e -> abrirVentanaStockActual());
+        btnAbrirHistorial.addActionListener(e -> abrirVentanaHistorial());
+        accesosRapidos.add(lblNumeroMovimientoCabecera);
+        accesosRapidos.add(btnAbrirStock);
+        accesosRapidos.add(btnAbrirHistorial);
         cabecera.add(titulo, BorderLayout.CENTER);
-        cabecera.add(lblNumeroMovimientoCabecera, BorderLayout.EAST);
+        cabecera.add(accesosRapidos, BorderLayout.EAST);
         add(cabecera, BorderLayout.NORTH);
         
         cbFiltroProducto.addActionListener(e -> cargarHistorial());
@@ -160,7 +171,7 @@ public class MovimientosPanel extends JPanel {
                     sorter.setRowFilter(null); // Muestra todo si está vacío
                 } else {
                     // "(?i)" hace que ignore mayúsculas y minúsculas al buscar
-                    sorter.setRowFilter(javax.swing.RowFilter.regexFilter("(?i)" + texto));
+                    sorter.setRowFilter(javax.swing.RowFilter.regexFilter("(?i)" + java.util.regex.Pattern.quote(texto)));
                 }
             }
         });
@@ -356,18 +367,19 @@ public class MovimientosPanel extends JPanel {
     scrollStock.setBorder(BorderFactory.createLineBorder(Interfaz.BORDER_COLOR));
     scrollStock.setPreferredSize(new Dimension(0, 250)); // Altura fija para no desplazar todo
 
-    // Buscador para la tabla de Stock
-    JPanel barraBusquedaStock = crearBarraBusquedaTabla("Stock Actual (Buscar):", tablaStock, modeloStock);
+    JLabel lblStock = new JLabel("Stock actual");
+    lblStock.setForeground(Color.WHITE);
+    lblStock.setFont(new Font("SansSerif", Font.BOLD, 13));
 
-    stockPanel.add(barraBusquedaStock, BorderLayout.NORTH);
+    stockPanel.add(lblStock, BorderLayout.NORTH);
     stockPanel.add(scrollStock, BorderLayout.CENTER);
 
 
     JPanel historialPanel = new JPanel(new BorderLayout(0, 8));
     historialPanel.setBackground(Interfaz.BG_MAIN);
 
-    // Cabecera del historial: Fila 1 (Combo) + Fila 2 (Buscador Texto)
-    JPanel cabeceraHistorial = new JPanel(new GridLayout(2, 1, 0, 8));
+    // Cabecera del historial: filtro por producto
+    JPanel cabeceraHistorial = new JPanel(new GridLayout(1, 1, 0, 8));
     cabeceraHistorial.setBackground(Interfaz.BG_MAIN);
 
     // Fila 1: Filtro por Producto (ComboBox)
@@ -414,11 +426,7 @@ public class MovimientosPanel extends JPanel {
     tablaHist.getColumnModel().getColumn(6).setCellRenderer(centerHist);
     tablaHist.getColumnModel().getColumn(7).setCellRenderer(centerHist);
 
-    // Fila 2: Buscador por Texto para el Historial
-    JPanel barraBusquedaHistorial = crearBarraBusquedaTabla("Buscar:", tablaHist, modeloHistorial);
-
     cabeceraHistorial.add(filaCombo);
-    cabeceraHistorial.add(barraBusquedaHistorial);
 
     JScrollPane scrollHist = new JScrollPane(tablaHist);
     scrollHist.getViewport().setBackground(Interfaz.BG_PANEL);
@@ -437,6 +445,93 @@ public class MovimientosPanel extends JPanel {
 
     return panel;
 }
+
+    private void abrirVentanaStockActual() {
+        cargarStockActual();
+        JTable tabla = crearTablaStock(modeloStock);
+        mostrarVentanaTabla("Stock actual de productos", tabla, null, new Dimension(850, 500));
+    }
+
+    private void abrirVentanaHistorial() {
+        cargarHistorial();
+        JTable tabla = crearTablaHistorial(modeloHistorial);
+        JLabel resumen = new JLabel(lblResumen.getText());
+        resumen.setForeground(Interfaz.TEXT_MUTED);
+        mostrarVentanaTabla("Historial de movimientos", tabla, resumen, new Dimension(1100, 580));
+    }
+
+    private JTable crearTablaStock(DefaultTableModel modelo) {
+        JTable tabla = crearTablaBase(modelo, 32);
+        DefaultTableCellRenderer center = new DefaultTableCellRenderer();
+        center.setHorizontalAlignment(SwingConstants.CENTER);
+        tabla.getColumnModel().getColumn(0).setCellRenderer(center);
+        tabla.getColumnModel().getColumn(2).setCellRenderer(center);
+        tabla.getColumnModel().getColumn(3).setCellRenderer(center);
+        tabla.getColumnModel().getColumn(4).setCellRenderer(new EstadoStockRenderer());
+        return tabla;
+    }
+
+    private JTable crearTablaHistorial(DefaultTableModel modelo) {
+        JTable tabla = crearTablaBase(modelo, 34);
+        DefaultTableCellRenderer center = new DefaultTableCellRenderer();
+        center.setHorizontalAlignment(SwingConstants.CENTER);
+        tabla.getColumnModel().getColumn(0).setCellRenderer(center);
+        tabla.getColumnModel().getColumn(1).setCellRenderer(center);
+        tabla.getColumnModel().getColumn(2).setCellRenderer(center);
+        tabla.getColumnModel().getColumn(4).setCellRenderer(center);
+        tabla.getColumnModel().getColumn(5).setCellRenderer(new CantidadRenderer());
+        tabla.getColumnModel().getColumn(6).setCellRenderer(center);
+        tabla.getColumnModel().getColumn(7).setCellRenderer(center);
+        return tabla;
+    }
+
+    private JTable crearTablaBase(DefaultTableModel modelo, int altoFila) {
+        JTable tabla = new JTable(modelo);
+        tabla.setBackground(Interfaz.BG_PANEL);
+        tabla.setForeground(Interfaz.TEXT_LIGHT);
+        tabla.setRowHeight(altoFila);
+        tabla.setGridColor(Interfaz.BORDER_COLOR);
+        tabla.setShowVerticalLines(false);
+        tabla.getTableHeader().setBackground(Interfaz.BG_SIDEBAR);
+        tabla.getTableHeader().setForeground(Interfaz.TEXT_MUTED);
+        tabla.getTableHeader().setFont(new Font("SansSerif", Font.BOLD, 11));
+        return tabla;
+    }
+
+    private void mostrarVentanaTabla(String titulo, JTable tabla, JLabel pie, Dimension tamano) {
+        JDialog ventana = new JDialog(SwingUtilities.getWindowAncestor(this), titulo, Dialog.ModalityType.MODELESS);
+        ventana.getContentPane().setBackground(Interfaz.BG_MAIN);
+        ventana.setLayout(new BorderLayout());
+
+        JPanel panel = new JPanel(new BorderLayout(0, 10));
+        panel.setBackground(Interfaz.BG_MAIN);
+        panel.setBorder(new EmptyBorder(16, 16, 16, 16));
+
+        JLabel lblTitulo = new JLabel(titulo);
+        lblTitulo.setForeground(Color.WHITE);
+        lblTitulo.setFont(new Font("SansSerif", Font.BOLD, 16));
+
+        JPanel cabeceraTabla = new JPanel(new BorderLayout(0, 10));
+        cabeceraTabla.setBackground(Interfaz.BG_MAIN);
+        cabeceraTabla.add(lblTitulo, BorderLayout.NORTH);
+        cabeceraTabla.add(crearBarraBusquedaTabla("Buscar:", tabla, (DefaultTableModel) tabla.getModel()), BorderLayout.CENTER);
+
+        JScrollPane scroll = new JScrollPane(tabla);
+        scroll.getViewport().setBackground(Interfaz.BG_PANEL);
+        scroll.setBorder(BorderFactory.createLineBorder(Interfaz.BORDER_COLOR));
+
+        panel.add(cabeceraTabla, BorderLayout.NORTH);
+        panel.add(scroll, BorderLayout.CENTER);
+        if (pie != null) {
+            panel.add(pie, BorderLayout.SOUTH);
+        }
+
+        ventana.add(panel, BorderLayout.CENTER);
+        ventana.setSize(tamano);
+        ventana.setLocationRelativeTo(this);
+        ventana.setVisible(true);
+    }
+
     private void actualizarCombos() {
         String seleccionadoLinea = (String) cbProductoLinea.getSelectedItem();
         String seleccionadoFiltro = (String) cbFiltroProducto.getSelectedItem();

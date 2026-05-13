@@ -1,5 +1,5 @@
 Clave,Nombre,ClaveCategoria,Costo,Precio,StockActual,StockMinimo,TiempoEntrega,Demanda,Estado
-123,Pantalla,ELEC05,2000.0,76.0,3,0,0,0,Activo
+123,Pantalla,ELEC05,2000.0,76.0,11,0,0,0,Activo
 321,Mouse,ELEC15,200.0,300.0,3,10,4,4,Activo
 4545,Teclado,ELEC15,150.0,300.0,30,3,1,4,Activo
 P9384,Conector RJ45,ELEC06,4.0,4.5,32,10,3,2000,Activo

@@ -34,6 +34,7 @@ public class CsvInventarioRepository {
     private final String rutaMovimientosLegacy;
     private final String rutaMovimientosEncabezado;
     private final String rutaMovimientosDetalle;
+    private final String rutaConfiguracion;
 
     /**
      * Define las rutas de los archivos CSV a utilizar.
@@ -46,6 +47,7 @@ public class CsvInventarioRepository {
         this.rutaMovimientosLegacy = rutaMovimientos;
         this.rutaMovimientosEncabezado = derivarRutaEncabezado(rutaMovimientos);
         this.rutaMovimientosDetalle = derivarRutaDetalle(rutaMovimientos);
+        this.rutaConfiguracion = "configuracion.csv";
     }
 
     /**
@@ -348,6 +350,60 @@ public class CsvInventarioRepository {
                         d.getCantidad(),
                         d.getStockAntes(),
                         d.getStockDespues()
+                );
+            }
+            csvPrinter.flush();
+        }
+    }
+
+    public ParametrosConfiguracion cargarConfiguracion() throws IOException {
+        File archivo = new File(rutaConfiguracion);
+        if (!archivo.exists()) {
+            return null;
+        }
+
+        CSVFormat formato = CSVFormat.DEFAULT.builder()
+                .setHeader()
+                .setSkipHeaderRecord(true)
+                .build();
+
+        try (Reader reader = Files.newBufferedReader(Paths.get(rutaConfiguracion), StandardCharsets.UTF_8);
+                CSVParser csvParser = new CSVParser(reader, formato)) {
+            for (CSVRecord record : csvParser) {
+                try {
+                    if (record.size() >= 4) {
+                        return new ParametrosConfiguracion(
+                                Double.parseDouble(record.get(1).trim()),
+                                Double.parseDouble(record.get(2).trim()),
+                                Integer.parseInt(record.get(3).trim())
+                        );
+                    } else if (record.size() >= 3) {
+                        return new ParametrosConfiguracion(
+                                Double.parseDouble(record.get(0).trim()),
+                                Double.parseDouble(record.get(1).trim()),
+                                Integer.parseInt(record.get(2).trim())
+                        );
+                    }
+                } catch (Exception ignored) {
+                    // ignora registros mal formados
+                }
+            }
+        }
+        return null;
+    }
+
+    public void guardarConfiguracion(ParametrosConfiguracion configuracion) throws IOException {
+        CSVFormat formato = CSVFormat.DEFAULT.builder()
+                .setHeader("CostoPedido", "CostoMantenimiento", "TiempoEntrega")
+                .build();
+
+        try (Writer writer = Files.newBufferedWriter(Paths.get(rutaConfiguracion), StandardCharsets.UTF_8);
+                CSVPrinter csvPrinter = new CSVPrinter(writer, formato)) {
+            if (configuracion != null) {
+                csvPrinter.printRecord(
+                        String.format(java.util.Locale.US, "%.2f", configuracion.getCostoPedido()),
+                        String.format(java.util.Locale.US, "%.2f", configuracion.getCostoMantenimiento()),
+                        configuracion.getTiempoEntrega()
                 );
             }
             csvPrinter.flush();
