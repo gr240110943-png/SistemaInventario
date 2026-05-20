@@ -28,6 +28,7 @@ public class InicioFrame extends javax.swing.JFrame {
     public static final String VISTA_CATALOGO = "CATALOGO";
     public static final String VISTA_MOVIMIENTOS = "MOVIMIENTOS INVENTARIO";
     public static final String VISTA_CONFIGURACION = "CONFIGURACION";
+    public static final String VISTA_ANALISIS = "ANALISIS INVENTARIO";
    // public static final String VISTA_STOCK = "STOCK";
 
     private final InventarioService service;
@@ -39,12 +40,14 @@ public class InicioFrame extends javax.swing.JFrame {
     private final CatalogoPanel panelCatalogo;
     private final MovimientosPanel panelMovimientos;
     private final ConfiguracionPanel panelConfiguracion;
+    private final AnalisisInventarioPanel panelAnalisis;
  //   private final StockPanel panelStock;
 
     private JButton btnInicio;
     private JButton btnCatalogo;
     private JButton btnMovimientos;
     private JButton btnConfiguracion;
+    private JButton btnAnalisis;
     private JButton btnStock;
 
     private String vistaActiva = VISTA_INICIO;
@@ -67,6 +70,7 @@ public class InicioFrame extends javax.swing.JFrame {
         panelCatalogo = new CatalogoPanel(service, this::actualizarTodo);
         panelMovimientos = new MovimientosPanel(service, this::actualizarTodo);
         panelConfiguracion = new ConfiguracionPanel(service);
+        panelAnalisis = new AnalisisInventarioPanel(service);
       //  panelStock = new StockPanel(service);
 
         panelContenido.setBackground(Interfaz.BG_MAIN);
@@ -74,6 +78,7 @@ public class InicioFrame extends javax.swing.JFrame {
         panelContenido.add(panelCatalogo, VISTA_CATALOGO);
         panelContenido.add(panelMovimientos, VISTA_MOVIMIENTOS);
         panelContenido.add(panelConfiguracion, VISTA_CONFIGURACION);
+        panelContenido.add(panelAnalisis, VISTA_ANALISIS);
        // panelContenido.add(panelStock, VISTA_STOCK);
         add(panelContenido, BorderLayout.CENTER);
 
@@ -89,6 +94,7 @@ public class InicioFrame extends javax.swing.JFrame {
         panelCatalogo.refrescar();
         panelMovimientos.refrescar();
         panelConfiguracion.refrescar();
+        panelAnalisis.refrescar();
       //  panelStock.refrescar();
     }
 
@@ -121,6 +127,8 @@ public class InicioFrame extends javax.swing.JFrame {
         btnMovimientos.addActionListener(e -> mostrarVista(VISTA_MOVIMIENTOS));
         btnConfiguracion = crearBotonMenu("Configuracion");
         btnConfiguracion.addActionListener(e -> mostrarVista(VISTA_CONFIGURACION));
+        btnAnalisis = crearBotonMenu("Analisis inventario");
+        btnAnalisis.addActionListener(e -> mostrarVista(VISTA_ANALISIS));
         btnStock = crearBotonMenu("Stock");
      //   btnStock.addActionListener(e -> mostrarVista(VISTA_STOCK));
 
@@ -128,6 +136,7 @@ public class InicioFrame extends javax.swing.JFrame {
         sidebar.add(btnCatalogo);
         sidebar.add(btnMovimientos);
         sidebar.add(btnConfiguracion);
+        sidebar.add(btnAnalisis);
        // sidebar.add(btnStock);
         sidebar.add(Box.createVerticalGlue());
 
@@ -152,7 +161,8 @@ public class InicioFrame extends javax.swing.JFrame {
         marcar(btnInicio, VISTA_INICIO.equals(vistaActiva));
         marcar(btnCatalogo, VISTA_CATALOGO.equals(vistaActiva));
         marcar(btnMovimientos, VISTA_MOVIMIENTOS.equals(vistaActiva));
-       marcar(btnConfiguracion, VISTA_CONFIGURACION.equals(vistaActiva));
+        marcar(btnConfiguracion, VISTA_CONFIGURACION.equals(vistaActiva));
+        marcar(btnAnalisis, VISTA_ANALISIS.equals(vistaActiva));
       //  marcar(btnStock, VISTA_STOCK.equals(vistaActiva));
     }
 

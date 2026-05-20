@@ -99,17 +99,14 @@ public class CatalogoPanel extends JPanel {
 
         JPanel derecha = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         derecha.setBackground(Interfaz.BG_MAIN);
-        var btnRecargar = Interfaz.botonSecundario("Recargar");
         var btnNuevo = Interfaz.botonPrimario("Nuevo producto");
         var btnEditar = Interfaz.botonSecundario("Editar");
         var btnVer = Interfaz.botonSecundario("Ver");
         var btnEstado = Interfaz.botonSecundario("Cambiar estado");
-        btnRecargar.addActionListener(e -> recargar());
         btnNuevo.addActionListener(e -> crearProducto());
         btnEditar.addActionListener(e -> editarProductoSeleccionado());
         btnVer.addActionListener(e -> verProductoSeleccionado());
         btnEstado.addActionListener(e -> cambiarEstadoSeleccionado());
-        derecha.add(btnRecargar);
         derecha.add(btnNuevo);
         derecha.add(btnEditar);
         derecha.add(btnVer);
@@ -371,10 +368,10 @@ public class CatalogoPanel extends JPanel {
         panel.add(crearCampo("Estado", txtEstado));
         panel.add(crearCampo("Costo", txtCosto));
         panel.add(crearCampo("Precio", txtPrecio));
-        panel.add(crearCampo("Stock actual", txtStockActual));
+        panel.add(crearCampo("Stock actual", txtStockActual)); 
         panel.add(crearCampo("Stock minimo", txtStockMinimo));
         panel.add(crearCampo("Tiempo entrega", txtTiempoEntrega));
-        panel.add(crearCampo("Demanda", txtDemanda));
+        panel.add(crearCampo("Demanda anual", txtDemanda));
         panel.add(crearCampo("Estado stock", txtEstadoStock));
 
         mostrarDialogoSoloLectura(panel, "Ver producto");

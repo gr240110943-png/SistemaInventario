@@ -7,6 +7,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -351,6 +352,127 @@ public class InventarioService {
         return lista;
     }
 
+    /**
+     * Historial de consumo por producto: solo movimientos de salida.
+     */
+    public List<MovimientoInventario> obtenerSalidasPorProducto(String claveProducto) {
+        List<MovimientoInventario> resultado = new ArrayList<>();
+        if (claveProducto == null || claveProducto.isBlank()) {
+            return resultado;
+        }
+        List<MovimientoInventario> movimientos = obtenerMovimientos(claveProducto);
+        for (MovimientoInventario movimiento : movimientos) {
+            if ("Salida".equalsIgnoreCase(movimiento.getTipo()) && movimiento.getCantidad() < 0) {
+                resultado.add(movimiento);
+            }
+        }
+        return resultado;
+    }
+
+    /**
+     * Consumo total del inventario (CT):
+     * suma de todas las salidas (cantidad * costo actual del producto).
+     */
+    public double obtenerConsumoTotalInventario() {
+        Map<String, Double> consumoPorProducto = calcularConsumoPorProducto();
+        double total = 0.0;
+        for (double consumoProducto : consumoPorProducto.values()) {
+            total += consumoProducto;
+        }
+        return total;
+    }
+
+    /**
+     * Analisis de inventario con:
+     * - Clasificacion ABC acumulada
+     * - Punto de reorden
+     * - EQQ
+     * - Indicadores de stock
+     *
+     * El filtro aplica por clave, nombre y categoria.
+     */
+    public List<AnalisisProducto> obtenerAnalisisInventario(String filtro) {
+        String criterio = filtro == null ? "" : filtro.trim().toLowerCase();
+        Map<String, Double> consumoPorProducto = calcularConsumoPorProducto();
+        double consumoTotal = 0.0;
+        for (double consumoProducto : consumoPorProducto.values()) {
+            consumoTotal += consumoProducto;
+        }
+
+        Map<String, String> grupoPorClave = new HashMap<>();
+        Map<String, Double> acumuladoPorClave = new HashMap<>();
+
+        List<Producto> ordenABC = new ArrayList<>(productos);
+        ordenABC.sort((a, b) -> Double.compare(
+                consumoPorProducto.getOrDefault(b.getClave(), 0.0),
+                consumoPorProducto.getOrDefault(a.getClave(), 0.0)
+        ));
+
+        if (consumoTotal > 0) {
+            double acumulado = 0.0;
+            for (Producto producto : ordenABC) {
+                double consumoProducto = consumoPorProducto.getOrDefault(producto.getClave(), 0.0);
+                double participacion = consumoProducto / consumoTotal;
+                acumulado += participacion;
+                acumuladoPorClave.put(producto.getClave(), acumulado);
+                grupoPorClave.put(producto.getClave(), clasificarGrupoAbc(acumulado));
+            }
+        } else {
+            for (Producto producto : ordenABC) {
+                acumuladoPorClave.put(producto.getClave(), 0.0);
+                grupoPorClave.put(producto.getClave(), "Sin consumo");
+            }
+        }
+
+        ParametrosConfiguracion cfg = configuracion;
+        double costoPedido = cfg == null ? 0.0 : cfg.getCostoPedido();
+        double costoMantenimiento = cfg == null ? 0.0 : cfg.getCostoMantenimiento();
+        int diasEntregaGlobal = cfg == null ? 0 : cfg.getTiempoEntrega();
+
+        List<AnalisisProducto> analisis = new ArrayList<>();
+        for (Producto producto : productos) {
+            String categoria = obtenerNombreCategoria(producto.getCategoriaClave()).toLowerCase();
+            if (!criterio.isBlank()) {
+                boolean coincide = producto.getClave().toLowerCase().contains(criterio)
+                        || producto.getNombre().toLowerCase().contains(criterio)
+                        || categoria.contains(criterio);
+                if (!coincide) {
+                    continue;
+                }
+            }
+
+            double cp = consumoPorProducto.getOrDefault(producto.getClave(), 0.0);
+            double participacion = consumoTotal <= 0 ? 0.0 : cp / consumoTotal;
+            double acumulado = acumuladoPorClave.getOrDefault(producto.getClave(), 0.0);
+            double puntoReorden = calcularPuntoReorden(producto, diasEntregaGlobal);
+            double eqq = calcularEqq(producto, costoPedido, costoMantenimiento);
+
+            boolean stockBajo = producto.getStockActual() < producto.getStockMinimo();
+            boolean sobreinventario = producto.getStockMinimo() > 0
+                    && producto.getStockActual() > (producto.getStockMinimo() * 3);
+            boolean bajoPuntoReorden = puntoReorden >= producto.getStockActual();
+
+            analisis.add(new AnalisisProducto(
+                    producto,
+                    grupoPorClave.getOrDefault(producto.getClave(), "Sin consumo"),
+                    cp,
+                    participacion,
+                    acumulado,
+                    puntoReorden,
+                    eqq,
+                    stockBajo,
+                    sobreinventario,
+                    bajoPuntoReorden
+            ));
+        }
+
+        analisis.sort(Comparator
+                .comparingInt((AnalisisProducto a) -> obtenerOrdenGrupoAbc(a.getGrupoAbc()))
+                .thenComparing(AnalisisProducto::getConsumoProducto, Comparator.reverseOrder())
+                .thenComparing(a -> a.getProducto().getNombre(), String.CASE_INSENSITIVE_ORDER));
+        return analisis;
+    }
+
     public int obtenerNumeroMovimiento(String idMovimiento) {
         MovimientoEncabezado enc = buscarEncabezado(idMovimiento);
         return enc == null ? 0 : enc.getNumeroMovimiento();
@@ -545,6 +667,71 @@ public class InventarioService {
             }
         }
         return max + 1;
+    }
+
+    /**
+     * Consumo por producto (CP): sumatoria de salidas * costo actual.
+     */
+    private Map<String, Double> calcularConsumoPorProducto() {
+        Map<String, Double> consumo = new HashMap<>();
+
+        for (MovimientoDetalle detalle : movimientosDetalle) {
+            MovimientoEncabezado encabezado = buscarEncabezado(detalle.getIdMovimiento());
+            if (encabezado == null || !"Salida".equalsIgnoreCase(encabezado.getTipo())) {
+                continue;
+            }
+
+            Producto producto = buscarProductoPorClave(detalle.getClaveProducto());
+            if (producto == null) {
+                continue;
+            }
+
+            int cantidadSalida = Math.abs(detalle.getCantidad());
+            double consumoLinea = cantidadSalida * producto.getCosto();
+            double acumulado = consumo.getOrDefault(producto.getClave(), 0.0);
+            consumo.put(producto.getClave(), acumulado + consumoLinea);
+        }
+        return consumo;
+    }
+
+    private String clasificarGrupoAbc(double acumulado) {
+        if (acumulado < 0.80) {
+            return "A";
+        }
+        if (acumulado < 0.95) {
+            return "B";
+        }
+        return "C";
+    }
+
+    private int obtenerOrdenGrupoAbc(String grupo) {
+        if ("A".equalsIgnoreCase(grupo)) {
+            return 0;
+        }
+        if ("B".equalsIgnoreCase(grupo)) {
+            return 1;
+        }
+        if ("C".equalsIgnoreCase(grupo)) {
+            return 2;
+        }
+        return 3;
+    }
+
+    private double calcularEqq(Producto producto, double costoPedido, double costoMantenimiento) {
+        if (producto == null || producto.getDemanda() <= 0 || costoPedido <= 0 || costoMantenimiento <= 0) {
+            return 0.0;
+        }
+        // EQQ = raiz(2 * D * S / H)
+        return Math.sqrt((2.0 * producto.getDemanda() * costoPedido) / costoMantenimiento);
+    }
+
+    private double calcularPuntoReorden(Producto producto, int diasEntregaGlobal) {
+        if (producto == null || producto.getDemanda() <= 0) {
+            return 0.0;
+        }
+        int diasEntrega = diasEntregaGlobal > 0 ? diasEntregaGlobal : Math.max(1, producto.getTiempoEntrega());
+        double demandaDiaria = producto.getDemanda() / 365.0;
+        return demandaDiaria * diasEntrega;
     }
 
     private String capitalizar(String texto) {

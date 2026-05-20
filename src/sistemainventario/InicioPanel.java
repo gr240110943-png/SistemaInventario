@@ -74,10 +74,13 @@ public class InicioPanel extends JPanel {
         btnCatalogo.addActionListener(e -> navegador.irAVista(InicioFrame.VISTA_CATALOGO));
         var btnMovimientos = Interfaz.botonPrimario("Movimientos Inventario");
         btnMovimientos.addActionListener(e -> navegador.irAVista(InicioFrame.VISTA_MOVIMIENTOS));
+        var btnAnalisis = Interfaz.botonPrimario("Analisis Inventario");
+        btnAnalisis.addActionListener(e -> navegador.irAVista(InicioFrame.VISTA_ANALISIS));
    
 
         accesos.add(btnCatalogo);
         accesos.add(btnMovimientos);
+        accesos.add(btnAnalisis);
 
         contenedorCentro.add(accesos, BorderLayout.SOUTH);
         add(contenedorCentro, BorderLayout.CENTER);
